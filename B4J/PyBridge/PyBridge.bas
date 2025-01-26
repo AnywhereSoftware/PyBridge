@@ -7,17 +7,18 @@ Version=10
 #Event: ConnectionStateChanged (Connected As Boolean)
 Sub Class_Globals
 	Type PyObject (Key As Int)
-	Private TASK_TYPE_RUN = 1, TASK_TYPE_GET = 2, TASK_TYPE_RUN_ASYNC = 3, TASK_TYPE_CLEAN = 4 As Int
+	Private TASK_TYPE_RUN = 1, TASK_TYPE_GET = 2, TASK_TYPE_RUN_ASYNC = 3, TASK_TYPE_CLEAN = 4 _
+		, TASK_TYPE_ERROR = 5 As Int
 	Type PyTask (TaskId As Int, TaskType As Int, Extra As List)
+	Type InternalPyTaskAsyncResult (PyObject As PyObject, Value As Object, Error As Boolean)
 	Private cleaner As JavaObject
 	Private comm As PyComm
 	Private mCallback As Object
 	Private mEventName As String
 	Private CleanerClass As String
-	Public BridgeModule, ImportModule, BuiltinModule As PyWrapper
+	Public Bridge, Import, Builtin As PyWrapper
 	Private TaskIdCounter, PyObjectCounter As Int
 	Private EmptyList As List, EmptyMap As Map
-	
 End Sub
 
 Public Sub Initialize (Callback As Object, EventName As String)
@@ -26,9 +27,9 @@ Public Sub Initialize (Callback As Object, EventName As String)
 	mEventName = EventName
 	comm.Initialize(Me)
 	CleanerClass = GetType(Me) & "$CleanRunnable"
-	BridgeModule.Initialize(Me, CreatePyObject(1))
-	ImportModule.Initialize(Me, CreatePyObject(2))
-	BuiltinModule.Initialize(Me, CreatePyObject(3))
+	Bridge.Initialize(Me, CreatePyObject(1))
+	Import.Initialize(Me, CreatePyObject(2))
+	Builtin.Initialize(Me, CreatePyObject(3))
 	PyObjectCounter = 100
 	EmptyList.Initialize
 	EmptyMap.Initialize
@@ -57,54 +58,40 @@ End Sub
 
 Public Sub Run (Target As PyObject, Method As String, Args As List, KWArgs As Map) As PyObject
 	Dim res As PyObject = CreatePyObject(0)
-	Dim aaa() As Object = ArrangeArgs(Args, KWArgs)
-	Dim TASK As PyTask = CreatePyTask(0, TASK_TYPE_RUN, Array(Target, Method, aaa(0), aaa(1), res))
+	If Args = Null Or Args.IsInitialized = False Then Args = EmptyList
+	If KWArgs = Null Or KWArgs.IsInitialized = False Then KWArgs = EmptyMap
+	Dim TASK As PyTask = CreatePyTask(0, TASK_TYPE_RUN, _
+		Array(Target.Key, Method, Args, KWArgs, res.Key))
 	comm.SendTask(TASK)
 	Return res
 End Sub
 
-Private Sub ArrangeArgs (Args As List, KWArgs As Map) As Object()
-	If Args = Null Or Args.IsInitialized = False Then Args = EmptyList
-	If KWArgs = Null Or KWArgs.IsInitialized = False Then KWArgs = EmptyMap
-	If Args.Size > 0 Then
-		Dim ConvertedArgs As List
-		ConvertedArgs.Initialize
-		For Each a As Object In Args
-			ConvertedArgs.Add(IIf(a Is PyWrapper, a.As(PyWrapper).mKey, a))
-		Next
-		Args = ConvertedArgs
-	End If
-	If KWArgs.Size > 0 Then
-		Dim ConvertedKWArgs As Map
-		ConvertedKWArgs.Initialize
-		For Each k As String In KWArgs.Keys
-			Dim v As Object = KWArgs.Get(k)
-			ConvertedKWArgs.Put(k, IIf(v Is PyWrapper, v.As(PyWrapper).mKey, v))
-		Next
-		KWArgs = ConvertedKWArgs
-	End If
-	Return Array(Args, KWArgs)
+Public Sub Flush
+	comm.Flush
 End Sub
 
 Public Sub RunAsync(Target As PyObject, Method As String, Args As List, KWArgs As Map) As ResumableSub
 	Dim res As PyObject = CreatePyObject(0)
-	Dim aaa() As Object = ArrangeArgs(Args, KWArgs)
-	Dim TASK As PyTask = CreatePyTask(0, TASK_TYPE_RUN_ASYNC, Array(Target, Method, aaa(0), aaa(1), res))
+	If Args = Null Or Args.IsInitialized = False Then Args = EmptyList
+	If KWArgs = Null Or KWArgs.IsInitialized = False Then KWArgs = EmptyMap
+	Dim TASK As PyTask = CreatePyTask(0, TASK_TYPE_RUN_ASYNC, Array(Target.Key, Method, Args, KWArgs, res.Key))
 	comm.SendTaskAndWait(TASK)
 	Wait For (TASK) AsyncTask_Received (TASK As PyTask)
-	Return res
+	Return CheckForErrorsAndReturn(TASK, res)
 End Sub
 
-Public Sub Get(PyObjects As List) As ResumableSub
-	Dim keys As List
-	keys.Initialize
-	For Each py As PyObject In PyObjects
-		keys.Add(py.Key)
-	Next
-	Dim TASK As PyTask = CreatePyTask(0, TASK_TYPE_GET, keys)
+Private Sub CheckForErrorsAndReturn (Task As PyTask, PyObject As PyObject) As InternalPyTaskAsyncResult
+	If Task.TaskType = TASK_TYPE_ERROR Then
+		MyLog(Task.Extra.Get(0))
+	End If
+	Return CreateInternalPyTaskAsyncResult(PyObject, Task.Extra.Get(0), Task.TaskType == TASK_TYPE_ERROR)
+End Sub
+
+Public Sub Fetch(PyObject As PyObject) As ResumableSub
+	Dim TASK As PyTask = CreatePyTask(0, TASK_TYPE_GET, Array(PyObject.Key))
 	comm.SendTaskAndWait(TASK)
 	Wait For (TASK) AsyncTask_Received (TASK As PyTask)
-	Return TASK.Extra
+	Return CheckForErrorsAndReturn(TASK, PyObject)
 End Sub
 
 Public Sub MyLog(s As String)
@@ -145,6 +132,7 @@ End Sub
 
 
 #if Java
+
 public static class CleanRunnable implements Runnable {
 	private final int key;
 	private final static java.util.List<Object> listOfKeys = java.util.Collections.synchronizedList(new java.util.ArrayList<Object>());
@@ -163,3 +151,12 @@ public static class CleanRunnable implements Runnable {
 	}
 }
 #End If
+
+Private Sub CreateInternalPyTaskAsyncResult (PyObject As PyObject, Value As Object, Error As Boolean) As InternalPyTaskAsyncResult
+	Dim t1 As InternalPyTaskAsyncResult
+	t1.Initialize
+	t1.PyObject = PyObject
+	t1.Value = Value
+	t1.Error = Error
+	Return t1
+End Sub

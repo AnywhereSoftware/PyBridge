@@ -15,10 +15,11 @@ Sub Class_Globals
 	Private ser As B4XSerializator
 	Private WaitingTasks As Map
 	Private jME As JavaObject
+	Private FlatTasks As List
 End Sub
 
 Public Sub Initialize (Bridge As PyBridge)
-	srvr.Initialize(53272, "srvr")
+	srvr.Initialize(53271, "srvr")
 	Dim jo As JavaObject
 	Dim correctClassesNames As Map = jo.InitializeStatic("anywheresoftware.b4a.randomaccessfile.RandomAccessFile").GetField("correctedClasses")
 	correctClassesNames.Put("_pyobject", GetType(Bridge) & "$_pyobject")
@@ -28,6 +29,7 @@ Public Sub Initialize (Bridge As PyBridge)
 	mBridge = Bridge
 	mBridge.MyLog("Server is listening on port: " & Port)
 	srvr.Listen
+	FlatTasks.Initialize
 End Sub
 
 Private Sub Srvr_NewConnection (Successful As Boolean, NewSocket As Socket)
@@ -36,6 +38,7 @@ Private Sub Srvr_NewConnection (Successful As Boolean, NewSocket As Socket)
 		astream.OutputQueueMaxSize = 1000000
 		astream.InitializePrefix(NewSocket.InputStream, True, NewSocket.OutputStream, "astream")
 		State = STATE_CONNECTED
+		Sleep(100)
 		StateChanged
 	End If
 End Sub
@@ -51,24 +54,36 @@ Private Sub AStream_NewData (Buffer() As Byte)
 End Sub
 
 Public Sub SendTask (Task As PyTask)
-	Dim bytes() As Byte = ser.ConvertObjectToBytes(Array(Task.TaskId, Task.TaskType, Task.Extra))
-	If astream.Write(bytes) = False Then
-		LogError("queue full")
+	If FlatTasks.Size = 0 Then CallSubDelayed(Me, "Flush")
+	FlatTasks.AddAll(Array(Task.TaskId, Task.TaskType, Task.Extra))
+End Sub
+
+Public Sub Flush
+	If FlatTasks.Size > 0 Then
+		Dim res As Boolean = astream.Write(ser.ConvertObjectToBytes(FlatTasks))
+		If astream.OutputQueueSize > 100 Then
+			mBridge.MyLog("Output queue size: " & astream.OutputQueueSize)			
+		End If
+		If res = False Then
+			LogError("Queue is full!")
+		End If
+		FlatTasks.Clear
 	End If
 End Sub
 
 Public Sub SendTaskAndWait (Task As PyTask)
 	WaitingTasks.Put(Task.TaskId, Task)
 	SendTask(Task)
+	Flush
 End Sub
 
 Private Sub AStream_Error
 	AStream_Terminated
-	
 End Sub
 
 Private Sub AStream_Terminated
 	State = STATE_DISCONNECTED
+	FlatTasks.Clear
 	srvr.Close
 	If astream.IsInitialized Then astream.Close
 	StateChanged

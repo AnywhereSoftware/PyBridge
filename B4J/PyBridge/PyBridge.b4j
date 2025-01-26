@@ -29,7 +29,7 @@ Sub Process_Globals
 	Private MainForm As Form
 	Private xui As XUI 
 	Private Button1 As B4XView
-	Private Bridge As PyBridge
+	Private Py As PyBridge
 	Private Time As Long
 	Private Test As PyWrapper
 End Sub
@@ -47,49 +47,29 @@ Private Sub Bridge_ConnectionStateChanged (Connected As Boolean)
 End Sub
 
 Private Sub Start
-	Dim Bridge As PyBridge
-	Bridge.Initialize(Me, "Bridge")
+	Dim Py As PyBridge
+	Py.Initialize(Me, "Bridge")
 	Wait For Bridge_ConnectionStateChanged (Connected As Boolean)
 	If Connected Then
 		Time = DateTime.Now
-		For i = 1 To 10000
-			Dim Test As PyWrapper = Bridge.ImportModule.Run("import_module", Array("test")).Run("Test", Null)
-			Dim Test As PyWrapper = Bridge.ImportModule.Run("import_module", Array("test")).Run("Test", Null)
-			Dim Test As PyWrapper = Bridge.ImportModule.Run("import_module", Array("test")).Run("Test", Null)
-			Dim Test As PyWrapper = Bridge.ImportModule.Run("import_module", Array("test")).Run("Test", Null)
-			Dim Test As PyWrapper = Bridge.ImportModule.Run("import_module", Array("test")).Run("Test", Null)
-			Dim Test As PyWrapper = Bridge.ImportModule.Run("import_module", Array("test")).Run("Test", Null)
-			Dim Test As PyWrapper = Bridge.ImportModule.Run("import_module", Array("test")).Run("Test", Null)
-			Dim Test As PyWrapper = Bridge.ImportModule.Run("import_module", Array("test")).Run("Test", Null)
-			Dim Test As PyWrapper = Bridge.ImportModule.Run("import_module", Array("test")).Run("Test", Null)
-			Dim Test As PyWrapper = Bridge.ImportModule.Run("import_module", Array("test")).Run("Test", Null)
-			Dim Test As PyWrapper = Bridge.ImportModule.Run("import_module", Array("test")).Run("Test", Null)
-			Dim Test As PyWrapper = Bridge.ImportModule.Run("import_module", Array("test")).Run("Test", Null)
-			Dim Test As PyWrapper = Bridge.ImportModule.Run("import_module", Array("test")).Run("Test", Null)
-			Dim Test As PyWrapper = Bridge.ImportModule.Run("import_module", Array("test")).Run("Test", Null)
-			Dim Test As PyWrapper = Bridge.ImportModule.Run("import_module", Array("test")).Run("Test", Null)
-			Dim Test As PyWrapper = Bridge.ImportModule.Run("import_module", Array("test")).Run("Test", Null)
-			Dim Test As PyWrapper = Bridge.ImportModule.Run("import_module", Array("test")).Run("Test", Null)
-			Dim Test As PyWrapper = Bridge.ImportModule.Run("import_module", Array("test")).Run("Test", Null)
-			Dim Test As PyWrapper = Bridge.ImportModule.Run("import_module", Array("test")).Run("Test", Null)
-			Dim Test As PyWrapper = Bridge.ImportModule.Run("import_module", Array("test")).Run("Test", Null)
-			Dim Test As PyWrapper = Bridge.ImportModule.Run("import_module", Array("test")).Run("Test", Null)
-			Dim Test As PyWrapper = Bridge.ImportModule.Run("import_module", Array("test")).Run("Test", Null)
-			Dim Test As PyWrapper = Bridge.ImportModule.Run("import_module", Array("test")).Run("Test", Null)
-			Dim Test As PyWrapper = Bridge.ImportModule.Run("import_module", Array("test")).Run("Test", Null)
-			Dim Test As PyWrapper = Bridge.ImportModule.Run("import_module", Array("test")).Run("Test", Null)
-			Dim Test As PyWrapper = Bridge.ImportModule.Run("import_module", Array("test")).Run("Test", Null)
-			Dim Test As PyWrapper = Bridge.ImportModule.Run("import_module", Array("test")).Run("Test", Null)
-			Dim Test As PyWrapper = Bridge.ImportModule.Run("import_module", Array("test")).Run("Test", Null)
-			If i Mod 100 = 0 Then
-				Dim MemoryLength As PyWrapper = Bridge.BuiltinModule.Run("len", Array(Bridge.BridgeModule.GetField("memory")))
-				Bridge.BuiltinModule.Run("print", Array("memory size: ", MemoryLength))
-				Sleep(50)
-			End If
-			
-		Next
-		Log("after")
+		Dim Test As PyWrapper = Py.Import.Run("import_module", Array("test")).Run("Test", Null)
+		Dim json As PyWrapper = Py.Import.Run("import_module", Array("json"))
+		Dim n1 As PyWrapper = Test.Run("sum", Array(10, 20))
+		Dim n2 As PyWrapper = Test.Run("sum", Array(n1, 20))
+		Dim torch As PyWrapper = Py.Import.Run("import_module", Array("torch"))
+		Wait For (torch.GetField("cuda").Run("is_available", Null).Fetch) Complete (Is_Available As PyWrapper)
+		Log(Is_Available.Value)
+		
+		
+		Dim s As PyWrapper = json.Run("dumps", Array(CreateMap("aaa": 23, "bbb": Array(n1, n2, 3))))
+		Py.Builtin.Run("print", Array(s))
+		Wait For (n1.Fetch) Complete (Result As PyWrapper)
+		Log(Result.Value)
+		Wait For (Py.Builtin.Run("tuple", Array(Array(n1, "fwefwef"))).Fetch) Complete (Result As PyWrapper)
+		Dim obj() As Object = Result.Value
+		Log(obj.As(List))
 	End If
+	Log("after")
 End Sub
 
 Sub Button1_Click
