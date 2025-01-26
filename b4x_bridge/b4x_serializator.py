@@ -1,8 +1,7 @@
 import struct
 import zlib
-from typing import Optional, Any
+from typing import Optional, Any, Callable
 import io
-
 
 # version: 1.01
 
@@ -53,6 +52,23 @@ class B4XSerializator:
         b = zlib.compress(self._writer.getvalue())
         self._writer.close()
         return b
+
+    @classmethod
+    def is_serializable(cls, obj: Any) -> bool:
+        if obj is None or isinstance(obj, (bool, int, float, str, bytes)):
+            return True
+        if isinstance(obj, (list, tuple)):
+            for item in obj:
+                if not B4XSerializator.is_serializable(item):
+                    return False
+            return True
+        elif isinstance(obj, dict):
+            for key, value in obj.items():
+                if not B4XSerializator.is_serializable(key) or not B4XSerializator.is_serializable(value):
+                    return False
+            return True
+        else:
+            return False
 
     def _write_object(self, obj) -> None:
         if obj is None:
@@ -166,7 +182,8 @@ class B4XSerializator:
         typ = self._fix_cls_name(cls)
         fields = typ.__dataclass_fields__.keys()
         map1 = {k: v for k, v in map1.items() if k in fields}
-        return typ(**map1)
+        obj = typ(**map1)
+        return obj
 
     def _fix_cls_name(self, cls: str) -> type:
         i = cls.find("$")

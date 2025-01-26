@@ -1,8 +1,9 @@
 import asyncio
 from asyncio import Queue, StreamReader, StreamWriter
+from typing import List, Tuple
 
 from b4x_bridge.b4x_serializator import B4XSerializator
-from b4x_bridge.bridge import B4XBridge, Task, PyObject
+from b4x_bridge.bridge import B4XBridge, Task, PyObject, TaskType
 
 
 class CommManager:
@@ -10,7 +11,7 @@ class CommManager:
         self.bridge = bridge
         self.serializator = B4XSerializator(types=[Task, PyObject])
         self.port = port
-        self.read_queue: Queue[Task] = Queue()
+        self.read_queue: Queue[List[Task]] = Queue()
         self.write_queue: Queue[Task] = Queue()
         self.writer = None
 
@@ -27,8 +28,11 @@ class CommManager:
            length: bytes = await reader.readexactly(4)
            n = int.from_bytes(length, 'big')
            data = await reader.readexactly(n)
-           task = Task.from_tuple(self.serializator.convert_bytes_to_object(data))
-           self.read_queue.put_nowait(task)
+           flat_tasks: List = self.serializator.convert_bytes_to_object(data)
+           tasks = []
+           for i in range(0, len(flat_tasks), 3):
+                tasks.append(Task(id=flat_tasks[i], task_type=TaskType(flat_tasks[i+1]), extra=flat_tasks[i+2]))
+           self.read_queue.put_nowait(tasks)
 
     async def writer_loop(self, writer: StreamWriter):
         while True:
