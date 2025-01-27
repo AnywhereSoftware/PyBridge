@@ -4,19 +4,23 @@ File1=Layout1.bjl
 FileGroup1=Default Group
 Group=Default Group
 Library1=b4xcollections
+Library10=jreflection
 Library2=byteconverter
-Library3=jcore
-Library4=jfx
-Library5=jnetwork
-Library6=jrandomaccessfile
-Library7=jxui
-Library8=javaobject
+Library3=javaobject
+Library4=jcore
+Library5=jfx
+Library6=jnetwork
+Library7=jokhttputils2
+Library8=jrandomaccessfile
+Library9=jxui
 Module1=PyBridge
-Module2=PyComm
-Module3=PyWrapper
+Module2=PyBuiltIns
+Module3=PyComm
+Module4=PyImport
+Module5=PyWrapper
 NumberOfFiles=1
-NumberOfLibraries=8
-NumberOfModules=3
+NumberOfLibraries=10
+NumberOfModules=5
 Version=10
 @EndOfDesignText@
 #Region Project Attributes 
@@ -32,16 +36,18 @@ Sub Process_Globals
 	Private Py As PyBridge
 	Private Time As Long
 	Private Test As PyWrapper
+	Private WebView1 As WebView
+	Type DynamicClass (Name As String, Age As Int, IsStudent As Boolean, TTT As Boolean)
 End Sub
 
 Sub AppStart (Form1 As Form, Args() As String)
 	MainForm = Form1
 	MainForm.RootPane.LoadLayout("Layout1")
-'	MainForm.Show
+	MainForm.Show
 	Start
 End Sub
 
-Private Sub Bridge_ConnectionStateChanged (Connected As Boolean)
+Private Sub Bridge_Disconnected
 	Log("Running time: " & (DateTime.Now - Time))
 	Start
 End Sub
@@ -49,29 +55,36 @@ End Sub
 Private Sub Start
 	Dim Py As PyBridge
 	Py.Initialize(Me, "Bridge")
-	Wait For Bridge_ConnectionStateChanged (Connected As Boolean)
-	If Connected Then
-		Time = DateTime.Now
-		Dim Test As PyWrapper = Py.Import.Run("import_module", Array("test")).Run("Test", Null)
-		Dim json As PyWrapper = Py.Import.Run("import_module", Array("json"))
-		Dim n1 As PyWrapper = Test.Run("sum", Array(10, 20))
-		Dim n2 As PyWrapper = Test.Run("sum", Array(n1, 20))
-		Dim torch As PyWrapper = Py.Import.Run("import_module", Array("torch"))
-		Wait For (torch.GetField("cuda").Run("is_available", Null).Fetch) Complete (Is_Available As PyWrapper)
-		Log(Is_Available.Value)
-		
-		
-		Dim s As PyWrapper = json.Run("dumps", Array(CreateMap("aaa": 23, "bbb": Array(n1, n2, 3))))
-		Py.Builtin.Run("print", Array(s))
-		Wait For (n1.Fetch) Complete (Result As PyWrapper)
-		Log(Result.Value)
-		Wait For (Py.Builtin.Run("tuple", Array(Array(n1, "fwefwef"))).Fetch) Complete (Result As PyWrapper)
-		Dim obj() As Object = Result.Value
-		Log(obj.As(List))
-	End If
-	Log("after")
+	Wait For Bridge_Connected
+	Dim fields As List = Array(Array("Name", GetPyType("str")), _
+		Array("Age", GetPyType("int")), Array("IsStudent", GetPyType("bool")), Array("TTT", GetPyType("bool")))
+	Dim dataclasses As PyWrapper = Py.ImportLib.ImportModule("dataclasses")
+	Dim DynamicClass As PyWrapper = dataclasses.Run("make_dataclass", Array("DynamicClass", fields))
+	Py.Bridge.GetField("comm").GetField("serializator").GetField("_types").Run("__setitem__", Array("dynamicclass", DynamicClass))
+	Py.Builtins.Print(Py.Bridge.GetField("comm").GetField("serializator").GetField("_types"))
+	Wait For (Py.Bridge.Fetch) Complete (unused As PyWrapper)
+	Dim items As PyWrapper = Py.Builtins.wrapper.Run("list", Array(Array(CreateDynamicClass("asdasd", -23, True))))
+	items.Run("append", Array(DynamicClass.Run("__call__", Array("Erel", 46, True, False))))
+	Py.Builtins.Print(Py.ImportLib.ImportModule("b4x_bridge.bridge").GetField("DynamicClass"))
+	Wait For (items.Fetch) Complete (Result As PyWrapper)
+	Log(Result.Value)
+	
+End Sub
+
+Private Sub GetPyType(TypeName As String) As PyWrapper
+	Return Py.Builtins.wrapper.GetField(TypeName)
 End Sub
 
 Sub Button1_Click
 	xui.MsgboxAsync("Hello World!", "B4X")
+End Sub
+
+Public Sub CreateDynamicClass (Name As String, Age As Int, IsStudent As Boolean) As DynamicClass
+	Dim t1 As DynamicClass
+	t1.Initialize
+	t1.Name = Name
+	t1.Age = Age
+	t1.IsStudent = IsStudent
+	t1.TTT = True
+	Return t1
 End Sub

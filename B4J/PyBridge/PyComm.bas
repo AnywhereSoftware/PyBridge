@@ -64,7 +64,7 @@ Public Sub Flush
 		If astream.OutputQueueSize > 100 Then
 			mBridge.MyLog("Output queue size: " & astream.OutputQueueSize)			
 		End If
-		If res = False Then
+		If res = False and astream.OutputQueueSize > 0 Then
 			LogError("Queue is full!")
 		End If
 		FlatTasks.Clear

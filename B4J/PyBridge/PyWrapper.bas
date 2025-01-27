@@ -37,7 +37,7 @@ Private Sub UnwrapList (Lst As List)
 		If v Is PyWrapper Then
 			Lst.Set(i, v.As(PyWrapper).mKey)
 		Else If v Is List Then
-			UnwrapList(Lst)
+			UnwrapList(v)
 		Else If v Is Map Then
 			UnwrapMap(v)
 		Else If IsArray(v) Then
@@ -93,7 +93,7 @@ Public Sub Fetch As ResumableSub
 End Sub
 
 Public Sub GetField (Field As String) As PyWrapper
-	Return mBridge.Builtin.Run("getattr", Array(mKey, Field))
+	Return mBridge.Builtins.wrapper.Run("getattr", Array(mKey, Field))
 End Sub
 
 Public Sub RunAsync (Method As String, Args As List) As ResumableSub

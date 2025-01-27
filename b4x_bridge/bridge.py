@@ -33,13 +33,14 @@ class Task:
         return self.extra[4]
 
     @classmethod
-    def return_value_task (cls, _id: int, value) -> "Task":
+    def return_value_task (cls, _id: int, value, serializator: B4XSerializator) -> "Task":
         task_type = TaskType.RUN
         if isinstance(value, Exception):
             task_type = TaskType.ERROR
             value = str(value)
-        if not B4XSerializator.is_serializable(value):
-            value = f"Unserializable object ({type(value).__name__})"
+        problematic_type = serializator.is_serializable(value)
+        if problematic_type:
+            value = f"Unserializable object ({problematic_type.__name__})"
         return Task(id=_id, task_type=task_type, extra=[value])
 
 class B4XBridge:
@@ -107,24 +108,24 @@ class B4XBridge:
 
     async def run_async(self, task: Task, error: Optional[Exception]):
         target, method_name, args, kwargs, store_target = task.extra
-        target = self.memory[target]
         self.unwrap_list(args)
         self.unwrap_dict(kwargs)
         if error is not None:
             res = error
         else:
             try:
+                target = self.memory[target]
                 method = getattr(target, task.extra[1])
                 res = await method(*args, **kwargs)
             except Exception as e:
                 res = self.wrap_exception(target, task.extra[1], e)
         self.memory[store_target] = res
-        self.comm.write_queue.put_nowait(Task.return_value_task(task.id, res))
+        self.comm.write_queue.put_nowait(Task.return_value_task(task.id, res, self.comm.serializator))
 
     def get_pyobject(self, task: Task):
         object_id = task.extra[0]
         obj = self.memory[object_id]
-        self.comm.write_queue.put_nowait(Task.return_value_task(task.id, obj))
+        self.comm.write_queue.put_nowait(Task.return_value_task(task.id, obj, self.comm.serializator))
 
     def clean(self, task: Task):
         for key in task.extra:
@@ -157,6 +158,12 @@ class B4XBridge:
 
     def kill(self):
         sys.exit()
+
+def task_done_callback(task: asyncio.Task):
+    try:
+        task.result()
+    except Exception as e:
+        print(f"Unhandled exception in task: {repr(e)}")
 
 def exception_handler(loop, context):
     print(context)

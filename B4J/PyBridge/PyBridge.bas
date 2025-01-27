@@ -4,7 +4,8 @@ ModulesStructureVersion=1
 Type=Class
 Version=10
 @EndOfDesignText@
-#Event: ConnectionStateChanged (Connected As Boolean)
+#Event: Connected
+#Event: Disconnected
 Sub Class_Globals
 	Type PyObject (Key As Int)
 	Private TASK_TYPE_RUN = 1, TASK_TYPE_GET = 2, TASK_TYPE_RUN_ASYNC = 3, TASK_TYPE_CLEAN = 4 _
@@ -16,9 +17,11 @@ Sub Class_Globals
 	Private mCallback As Object
 	Private mEventName As String
 	Private CleanerClass As String
-	Public Bridge, Import, Builtin As PyWrapper
+	Public Builtins As PyBuiltIns
+	Public ImportLib As PyImport
 	Private TaskIdCounter, PyObjectCounter As Int
 	Private EmptyList As List, EmptyMap As Map
+	Public Bridge As PyWrapper
 End Sub
 
 Public Sub Initialize (Callback As Object, EventName As String)
@@ -28,8 +31,8 @@ Public Sub Initialize (Callback As Object, EventName As String)
 	comm.Initialize(Me)
 	CleanerClass = GetType(Me) & "$CleanRunnable"
 	Bridge.Initialize(Me, CreatePyObject(1))
-	Import.Initialize(Me, CreatePyObject(2))
-	Builtin.Initialize(Me, CreatePyObject(3))
+	ImportLib.Initialize(Me, CreatePyObject(2))
+	Builtins.Initialize(Me, CreatePyObject(3))
 	PyObjectCounter = 100
 	EmptyList.Initialize
 	EmptyMap.Initialize
@@ -49,7 +52,7 @@ Private Sub CreatePyObject (Key As Int) As PyObject
 End Sub
 
 Private Sub State_Changed (State As Int)
-	CallSubDelayed2(mCallback, mEventName & "_ConnectionStateChanged", State = comm.STATE_CONNECTED)
+	CallSubDelayed(mCallback, mEventName & IIf(State = comm.STATE_CONNECTED, "_connected", "_disconnected"))
 End Sub
 
 Private Sub Task_Received(TASK As PyTask)

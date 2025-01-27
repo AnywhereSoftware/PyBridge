@@ -1,6 +1,6 @@
 import struct
 import zlib
-from typing import Optional, Any, Callable
+from typing import Optional, Any, Callable, Type
 import io
 
 # version: 1.01
@@ -53,22 +53,25 @@ class B4XSerializator:
         self._writer.close()
         return b
 
-    @classmethod
-    def is_serializable(cls, obj: Any) -> bool:
+    def is_serializable(self, obj: Any) -> Optional[Type]:
         if obj is None or isinstance(obj, (bool, int, float, str, bytes)):
-            return True
+            return None
         if isinstance(obj, (list, tuple)):
             for item in obj:
-                if not B4XSerializator.is_serializable(item):
-                    return False
-            return True
+                problem = self.is_serializable(item)
+                if problem is not None: return problem
+            return None
         elif isinstance(obj, dict):
             for key, value in obj.items():
-                if not B4XSerializator.is_serializable(key) or not B4XSerializator.is_serializable(value):
-                    return False
-            return True
+                problem = self.is_serializable(key)
+                if problem is not None: return problem
+                problem = self.is_serializable(value)
+                if problem is not None: return problem
+            return None
+        elif type(obj).__name__.lower() in self._types:
+            return None
         else:
-            return False
+            return type(obj)
 
     def _write_object(self, obj) -> None:
         if obj is None:
@@ -159,7 +162,7 @@ class B4XSerializator:
             fmt, length = self._BYTES_TO_NUMBERS[t]
             return struct.unpack("<" + fmt, self._read_bytes(length))[0]
         elif t == self._T_BOOLEAN:
-            return self._read_bytes(1) == 1
+            return self._read_bytes(1)[0] == 1
         elif t == self._T_STRING:
             b = self._read_bytes(self._read_int())
             return b.tobytes().decode("utf-8")
