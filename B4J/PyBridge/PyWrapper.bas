@@ -93,7 +93,7 @@ Public Sub Fetch As ResumableSub
 End Sub
 
 Public Sub GetField (Field As String) As PyWrapper
-	Return mBridge.Utils.wrapper.Run("getattr", Array(mKey, Field))
+	Return mBridge.Utils.BuiltIns.Run("getattr", Array(mKey, Field))
 End Sub
 
 Public Sub RunAsync (Method As String, Args As List) As ResumableSub

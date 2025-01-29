@@ -44,9 +44,13 @@ End Sub
 Sub AppStart (Form1 As Form, Args() As String)
 	MainForm = Form1
 	MainForm.RootPane.LoadLayout("Layout1")
-'	MainForm.Show
+	MainForm.Show
 	Py.Initialize(Me, "Bridge")
 	Start
+End Sub
+
+Sub Button1_Click
+	ExitApplication
 End Sub
 
 Private Sub Bridge_Disconnected
@@ -54,45 +58,39 @@ Private Sub Bridge_Disconnected
 End Sub
 
 Private Sub Start
-	Dim opt As PyOptions = Py.CreateOptions("C:\Users\H\Downloads\projects\WPy64-31280\python\python.exe")
-	opt.LocalPort = 53271
+	Dim opt As PyOptions = Py.CreateOptions("D:\python\python\python.exe")
+'	opt.LocalPort = 53271
 	opt.ForceCopyBridgeSrc = True
+'	opt.PythonExecutable = ""
 	Py.Start(opt)
 	Wait For Bridge_Connected
-	Dim data As Map = CreateMap("application": CreateMap("name": "MyApp", "version": "1.0.0"), _
-		"servers": Array( _
-			CreateMap("name": "server1", "roles": Array("web", "db")), _ 
-			CreateMap("name": "server2", "roles": Array("web"))))
-	Py.Utils.Print(data)
-	Wait For (GenerateYaml(data).Fetch) Complete (Result As PyWrapper)
-	Log(Result.Value)
-	Wait For (ParseYaml(Result).Fetch) Complete (Result As PyWrapper)
-	Log(Result.Value)
-'	Py.ImportLib.ImportModule("sys").Run("exit", Null)
+	Dim reader As PyWrapper = CreateOcrReader(Array("en"))
+	Py.Utils.Print(Py.Utils.EvalGlobals.Run("__getitem__", Array("xxx")).GetField("model_storage_directory"))
 End Sub
 
 
-Private Sub GenerateYaml(Data As Map) As PyWrapper
-	Return Py.Utils.RunFunction("generate_yaml", Array(Data), Null, _
+Private Sub CreateOcrReader(Languages As List) As PyWrapper
+	Return Py.Utils.RunFunction("CreateOcrReader", Array(Languages), Null, _
 $"
-import yaml
-def generate_yaml(data):
-	yaml.add_representer(tuple, represent_tuple)
-	return yaml.dump(data, default_flow_style=False, sort_keys=False)
-def represent_tuple(dumper, data):
-    return dumper.represent_list(list(data))
-
+xxx = None
+import easyocr
+def CreateOcrReader(Languages):
+	global xxx
+	xxx = easyocr.Reader(Languages)
+	
 "$)
 End Sub
 
-Private Sub ParseYaml (YamlString As Object) As PyWrapper
-	Return Py.Utils.RunFunction("parse_yaml", Array(YamlString), Null, _
+Private Sub OcrRead(Reader As PyWrapper, Path As String) As PyWrapper
+	Return Py.Utils.RunFunction("OcrRead", Array(Reader, Path), Null, _
 $"
-import yaml
-def parse_yaml (yaml_string):
-	return yaml.safe_load(yaml_string)
+def OcrRead(reader, path):
+	reader = xxx
+	return reader.readtext(path)
 "$)
 End Sub
+
+
 
 Private Sub Bridge_Event (Name As String, Params As Map)
 	Dim key As Int = Params.Get("key1")
@@ -104,9 +102,7 @@ Private Sub Bridge_Event (Name As String, Params As Map)
 End Sub
 
 
-Sub Button1_Click
-	xui.MsgboxAsync("Hello World!", "B4X")
-End Sub
+
 
 Public Sub CreateDynamicClass (Name As String, Age As Int, IsStudent As Boolean) As DynamicClass
 	Dim t1 As DynamicClass

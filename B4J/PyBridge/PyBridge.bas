@@ -10,12 +10,12 @@ Version=10
 Sub Class_Globals
 	Type PyObject (Key As Int)
 	Private TASK_TYPE_RUN = 1, TASK_TYPE_GET = 2, TASK_TYPE_RUN_ASYNC = 3, TASK_TYPE_CLEAN = 4 _
-		, TASK_TYPE_ERROR = 5, TASK_TYPE_EVENT = 6 As Int
+		, TASK_TYPE_ERROR = 5, TASK_TYPE_EVENT = 6, TASK_TYPE_PING = 7 As Int
 	Type PyTask (TaskId As Int, TaskType As Int, Extra As List)
 	Type InternalPyTaskAsyncResult (PyObject As PyObject, Value As Object, Error As Boolean)
 	Type PyOptions (PythonExecutable As String, LocalPort As Int, _
 		PyBridgePath As String, PyOutColor As Int, PyErrColor As Int, B4JColor As Int, _
-		ForceCopyBridgeSrc As Boolean)
+		ForceCopyBridgeSrc As Boolean, WatchDog As Int)
 	Private cleaner As JavaObject
 	Private comm As PyComm
 	Private mCallback As Object
@@ -41,6 +41,7 @@ Public Sub Initialize (Callback As Object, EventName As String)
 	EmptyMap.Initialize
 	CleanerClass = GetType(Me) & "$CleanRunnable"
 	mOptions.Initialize
+	
 End Sub
 
 Public Sub Start (Options As PyOptions)
@@ -49,13 +50,14 @@ Public Sub Start (Options As PyOptions)
 	comm.Initialize(Me, Options.LocalPort)
 	PyObjectCounter = 100
 	If Options.PythonExecutable <> "" Then
-		If File.Exists(Options.PyBridgePath, "") = False or mOptions.ForceCopyBridgeSrc Then
+		If File.Exists(Options.PyBridgePath, "") = False Or mOptions.ForceCopyBridgeSrc Then
 			File.Copy(File.DirAssets, "b4x_bridge.zip", Options.PyBridgePath, "")
 			MyLog(B4JPrefix, mOptions.B4JColor, "Python package copied to: " & Options.PyBridgePath)
 		End If
 		Dim Shl As Shell
-		Shl.Initialize("shl", Options.PythonExecutable, Array("-u", "-m", "b4x_bridge", "" & comm.Port))
-		Shl.SetEnvironmentVariables(CreateMap("PYTHONPATH": Options.PyBridgePath))
+		Shl.Initialize("shl", Options.PythonExecutable, Array As String("-u", "-m", "b4x_bridge", comm.Port, mOptions.WatchDog))
+		Shl.SetEnvironmentVariables(CreateMap("PYTHONPATH": Options.PyBridgePath, _
+			"PYTHONUTF8": 1))
 		Shl.RunWithOutputEvents(-1)
 	End If
 	
@@ -81,6 +83,7 @@ Public Sub CreateOptions (PythonExecutable As String) As PyOptions
 	opt.B4JColor = 0xFF727272
 	opt.PyErrColor = 0xFFF74479
 	opt.PyOutColor = 0xFF446EF7
+	opt.WatchDog = 60
 	Return opt
 End Sub
 
@@ -102,6 +105,9 @@ Private Sub State_Changed (State As Int)
 		ImportLib.Initialize(Me, CreatePyObject(2))
 		Utils.Initialize(Me, CreatePyObject(3))
 		CheckKeysNeedToBeCleaned
+		If Shl.IsInitialized Then
+			Me.as(JavaObject).RunMethod("add_shutdown_hook", Array(Shl))
+		End If
 	Else
 		CleanerIndex = CleanerIndex + 1
 		KillProcess
@@ -109,7 +115,7 @@ Private Sub State_Changed (State As Int)
 	CallSubDelayed(mCallback, mEventName & IIf(State = comm.STATE_CONNECTED, "_connected", "_disconnected"))
 End Sub
 
-Private Sub KillProcess
+Public Sub KillProcess
 	Try
 		If mOptions.PythonExecutable <> "" And Shl.IsInitialized Then Shl.KillProcess
 	Catch
@@ -118,7 +124,9 @@ Private Sub KillProcess
 End Sub
 
 Private Sub Task_Received(TASK As PyTask)
-	If TASK.TaskType <> TASK_TYPE_EVENT Then
+	If TASK.TaskType = TASK_TYPE_PING Then
+		comm.SendTask(CreatePyTask(0, TASK_TYPE_PING, Array()))
+	Else If TASK.TaskType <> TASK_TYPE_EVENT Then
 		LogError("Unexpected message: " & TASK)
 	Else
 		Dim EventName As String = TASK.Extra.Get(0)
@@ -212,6 +220,12 @@ End Sub
 
 #if Java
 
+public void add_shutdown_hook(final anywheresoftware.b4j.objects.Shell shl) {
+	Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+			shl.KillProcess();
+        }));
+}
+
 public static class CleanRunnable implements Runnable {
 	private final int key;
 	private final static java.util.List<Object> listOfKeys = java.util.Collections.synchronizedList(new java.util.ArrayList<Object>());
@@ -229,6 +243,7 @@ public static class CleanRunnable implements Runnable {
 		}
 	}
 }
+
 #End If
 
 Private Sub CreateInternalPyTaskAsyncResult (PyObject As PyObject, Value As Object, Error As Boolean) As InternalPyTaskAsyncResult

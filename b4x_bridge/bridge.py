@@ -20,6 +20,7 @@ class TaskType(IntEnum):
     CLEAN = 4
     ERROR = 5
     EVENT = 6
+    PING = 7
 
 
 @dataclass(slots=True, frozen=True)
@@ -45,15 +46,16 @@ class Task:
         return Task(id=_id, task_type=task_type, extra=[value])
 
 class B4XBridge:
-    def __init__(self):
+    def __init__(self, port:int, watchdog:int):
         self.memory:dict[int, object] = {
             1: self,
             2: importlib,
             3: builtins
         }
         from .comm_manager import CommManager
-        self.comm = CommManager(self, int(sys.argv[1]))
+        self.comm = CommManager(self, port)
         self.version = "0.1"
+        self.max_time_until_pong = watchdog
 
     def register_dataclass(self, cls):
         self.comm.serializator.add_type(cls)
@@ -184,8 +186,12 @@ def exception_handler(loop, context):
     print(context, file=sys.stderr)
 
 async def main():
-    bridge = B4XBridge()
-    print(f"starting PyBridge {bridge.version}")
+    port = int(sys.argv[1])
+    watchdog = int(sys.argv[2])
+
+    bridge = B4XBridge(port, watchdog)
+    print(f"starting PyBridge v{bridge.version}")
+    print(f"watchdog set to {watchdog} seconds" if watchdog else "watchdog disabled")
     loop = asyncio.get_event_loop()
     loop.set_exception_handler(exception_handler)
     await bridge.start()
