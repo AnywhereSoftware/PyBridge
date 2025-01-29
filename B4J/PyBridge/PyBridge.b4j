@@ -1,25 +1,26 @@
 ﻿AppType=JavaFX
 Build1=Default,b4j.example
-File1=Layout1.bjl
+File1=b4x_bridge.zip
+File2=Layout1.bjl
 FileGroup1=Default Group
+FileGroup2=Default Group
 Group=Default Group
 Library1=b4xcollections
-Library10=jreflection
-Library2=byteconverter
-Library3=javaobject
-Library4=jcore
-Library5=jfx
-Library6=jnetwork
-Library7=jokhttputils2
-Library8=jrandomaccessfile
-Library9=jxui
+Library2=javaobject
+Library3=jcore
+Library4=jfx
+Library5=jnetwork
+Library6=jokhttputils2
+Library7=jrandomaccessfile
+Library8=jxui
+Library9=jshell
 Module1=PyBridge
-Module2=PyBuiltIns
-Module3=PyComm
-Module4=PyImport
+Module2=PyComm
+Module3=PyImport
+Module4=PyUtils
 Module5=PyWrapper
-NumberOfFiles=1
-NumberOfLibraries=10
+NumberOfFiles=2
+NumberOfLibraries=9
 NumberOfModules=5
 Version=10
 @EndOfDesignText@
@@ -27,7 +28,7 @@ Version=10
 	#MainFormWidth: 600
 	#MainFormHeight: 600 
 #End Region
-
+#MergeLibraries: false
 Sub Process_Globals
 	Private fx As JFX
 	Private MainForm As Form
@@ -43,37 +44,65 @@ End Sub
 Sub AppStart (Form1 As Form, Args() As String)
 	MainForm = Form1
 	MainForm.RootPane.LoadLayout("Layout1")
-	MainForm.Show
+'	MainForm.Show
+	Py.Initialize(Me, "Bridge")
 	Start
 End Sub
 
 Private Sub Bridge_Disconnected
 	Log("Running time: " & (DateTime.Now - Time))
-	Start
 End Sub
 
 Private Sub Start
-	Dim Py As PyBridge
-	Py.Initialize(Me, "Bridge")
+	Dim opt As PyOptions = Py.CreateOptions("C:\Users\H\Downloads\projects\WPy64-31280\python\python.exe")
+	opt.LocalPort = 53271
+	opt.ForceCopyBridgeSrc = True
+	Py.Start(opt)
 	Wait For Bridge_Connected
-	Dim fields As List = Array(Array("Name", GetPyType("str")), _
-		Array("Age", GetPyType("int")), Array("IsStudent", GetPyType("bool")), Array("TTT", GetPyType("bool")))
-	Dim dataclasses As PyWrapper = Py.ImportLib.ImportModule("dataclasses")
-	Dim DynamicClass As PyWrapper = dataclasses.Run("make_dataclass", Array("DynamicClass", fields))
-	Py.Bridge.GetField("comm").GetField("serializator").GetField("_types").Run("__setitem__", Array("dynamicclass", DynamicClass))
-	Py.Builtins.Print(Py.Bridge.GetField("comm").GetField("serializator").GetField("_types"))
-	Wait For (Py.Bridge.Fetch) Complete (unused As PyWrapper)
-	Dim items As PyWrapper = Py.Builtins.wrapper.Run("list", Array(Array(CreateDynamicClass("asdasd", -23, True))))
-	items.Run("append", Array(DynamicClass.Run("__call__", Array("Erel", 46, True, False))))
-	Py.Builtins.Print(Py.ImportLib.ImportModule("b4x_bridge.bridge").GetField("DynamicClass"))
-	Wait For (items.Fetch) Complete (Result As PyWrapper)
+	Dim data As Map = CreateMap("application": CreateMap("name": "MyApp", "version": "1.0.0"), _
+		"servers": Array( _
+			CreateMap("name": "server1", "roles": Array("web", "db")), _ 
+			CreateMap("name": "server2", "roles": Array("web"))))
+	Py.Utils.Print(data)
+	Wait For (GenerateYaml(data).Fetch) Complete (Result As PyWrapper)
 	Log(Result.Value)
-	
+	Wait For (ParseYaml(Result).Fetch) Complete (Result As PyWrapper)
+	Log(Result.Value)
+'	Py.ImportLib.ImportModule("sys").Run("exit", Null)
 End Sub
 
-Private Sub GetPyType(TypeName As String) As PyWrapper
-	Return Py.Builtins.wrapper.GetField(TypeName)
+
+Private Sub GenerateYaml(Data As Map) As PyWrapper
+	Return Py.Utils.RunFunction("generate_yaml", Array(Data), Null, _
+$"
+import yaml
+def generate_yaml(data):
+	yaml.add_representer(tuple, represent_tuple)
+	return yaml.dump(data, default_flow_style=False, sort_keys=False)
+def represent_tuple(dumper, data):
+    return dumper.represent_list(list(data))
+
+"$)
 End Sub
+
+Private Sub ParseYaml (YamlString As Object) As PyWrapper
+	Return Py.Utils.RunFunction("parse_yaml", Array(YamlString), Null, _
+$"
+import yaml
+def parse_yaml (yaml_string):
+	return yaml.safe_load(yaml_string)
+"$)
+End Sub
+
+Private Sub Bridge_Event (Name As String, Params As Map)
+	Dim key As Int = Params.Get("key1")
+	Dim o As PyObject
+	o.Key = key
+	Dim w As PyWrapper
+	w.Initialize(Py, o)
+	Py.Utils.Print(w)
+End Sub
+
 
 Sub Button1_Click
 	xui.MsgboxAsync("Hello World!", "B4X")

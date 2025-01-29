@@ -82,7 +82,7 @@ Private Sub UnwrapMap (Map As Map)
 		End If
 	Next
 	For Each key As Object In KeysThatNeedToBeUnwrapped
-		Dim value As Object = Map.Get(value)
+		Dim value As Object = Map.Get(key)
 		Map.Put(key, value.As(PyWrapper).mKey)
 	Next
 End Sub
@@ -93,7 +93,7 @@ Public Sub Fetch As ResumableSub
 End Sub
 
 Public Sub GetField (Field As String) As PyWrapper
-	Return mBridge.Builtins.wrapper.Run("getattr", Array(mKey, Field))
+	Return mBridge.Utils.wrapper.Run("getattr", Array(mKey, Field))
 End Sub
 
 Public Sub RunAsync (Method As String, Args As List) As ResumableSub

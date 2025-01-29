@@ -19,6 +19,7 @@ class TaskType(IntEnum):
     RUN_ASYNC = 3
     CLEAN = 4
     ERROR = 5
+    EVENT = 6
 
 
 @dataclass(slots=True, frozen=True)
@@ -50,8 +51,12 @@ class B4XBridge:
             2: importlib,
             3: builtins
         }
-        from comm_manager import CommManager
+        from .comm_manager import CommManager
         self.comm = CommManager(self, int(sys.argv[1]))
+        self.version = "0.1"
+
+    def register_dataclass(self, cls):
+        self.comm.serializator.add_type(cls)
 
     async def start(self):
         await self.comm.connect()
@@ -122,9 +127,18 @@ class B4XBridge:
         self.memory[store_target] = res
         self.comm.write_queue.put_nowait(Task.return_value_task(task.id, res, self.comm.serializator))
 
-    def get_pyobject(self, task: Task):
+    def raise_event(self, event_name: str, params: dict):
+        if params:
+            self.unwrap_dict(params)
+        task = Task(0, TaskType.EVENT, [event_name, params])
+        self.comm.write_queue.put_nowait(task)
+
+    def get_pyobject(self, task: Task, error: Optional[Exception]):
         object_id = task.extra[0]
-        obj = self.memory[object_id]
+        if error is not None:
+            obj = error
+        else:
+            obj = self.memory[object_id]
         self.comm.write_queue.put_nowait(Task.return_value_task(task.id, obj, self.comm.serializator))
 
     def clean(self, task: Task):
@@ -134,7 +148,7 @@ class B4XBridge:
 
     def wrap_exception(self, target, method, exception) -> Exception:
         e = Exception(f"Python Error ({type(exception).__name__}) - Method: {type(target).__name__}.{method}: {exception}")
-        print(e)
+        print(e, file=sys.stderr)
         return e
 
     async def wait_for_incoming(self):
@@ -150,7 +164,7 @@ class B4XBridge:
                     else:
                         state_good, e = self.run(task)
                 elif task.task_type == TaskType.GET:
-                    self.get_pyobject(task)
+                    self.get_pyobject(task, e)
                 elif task.task_type == TaskType.RUN_ASYNC:
                     asyncio.create_task(self.run_async(task, e))
                 elif task.task_type == TaskType.CLEAN:
@@ -163,13 +177,15 @@ def task_done_callback(task: asyncio.Task):
     try:
         task.result()
     except Exception as e:
-        print(f"Unhandled exception in task: {repr(e)}")
+        print(f"Unhandled exception in task: {repr(e)}", file=sys.stderr)
+        sys.exit()
 
 def exception_handler(loop, context):
-    print(context)
+    print(context, file=sys.stderr)
 
 async def main():
     bridge = B4XBridge()
+    print(f"starting PyBridge {bridge.version}")
     loop = asyncio.get_event_loop()
     loop.set_exception_handler(exception_handler)
     await bridge.start()

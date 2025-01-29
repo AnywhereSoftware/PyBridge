@@ -18,8 +18,8 @@ Sub Class_Globals
 	Private FlatTasks As List
 End Sub
 
-Public Sub Initialize (Bridge As PyBridge)
-	srvr.Initialize(53271, "srvr")
+Public Sub Initialize (Bridge As PyBridge, LocalPort As Int)
+	srvr.Initialize(LocalPort, "srvr")
 	Dim jo As JavaObject
 	Dim correctClassesNames As Map = jo.InitializeStatic("anywheresoftware.b4a.randomaccessfile.RandomAccessFile").GetField("correctedClasses")
 	correctClassesNames.Put("_pyobject", GetType(Bridge) & "$_pyobject")
@@ -27,15 +27,15 @@ Public Sub Initialize (Bridge As PyBridge)
 	WaitingTasks.Initialize
 	Port = srvr.As(JavaObject).GetFieldJO("ssocket").RunMethod("getLocalPort", Null)
 	mBridge = Bridge
-	mBridge.MyLog("Server is listening on port: " & Port)
+	mBridge.MyLog(mBridge.B4JPrefix, mBridge.mOptions.B4JColor, "Server is listening on port: " & Port)
 	srvr.Listen
 	FlatTasks.Initialize
 End Sub
 
 Private Sub Srvr_NewConnection (Successful As Boolean, NewSocket As Socket)
 	If Successful Then
-		mBridge.MyLog("connected")
-		astream.OutputQueueMaxSize = 1000000
+		mBridge.MyLog(mBridge.B4JPrefix, mBridge.mOptions.B4JColor, "connected")
+'		astream.OutputQueueMaxSize = 1000000
 		astream.InitializePrefix(NewSocket.InputStream, True, NewSocket.OutputStream, "astream")
 		State = STATE_CONNECTED
 		Sleep(100)
@@ -62,9 +62,9 @@ Public Sub Flush
 	If FlatTasks.Size > 0 Then
 		Dim res As Boolean = astream.Write(ser.ConvertObjectToBytes(FlatTasks))
 		If astream.OutputQueueSize > 100 Then
-			mBridge.MyLog("Output queue size: " & astream.OutputQueueSize)			
+			mBridge.MyLog(mBridge.B4JPrefix, mBridge.mOptions.B4JColor, "Output queue size: " & astream.OutputQueueSize)
 		End If
-		If res = False and astream.OutputQueueSize > 0 Then
+		If res = False And astream.OutputQueueSize > 0 Then
 			LogError("Queue is full!")
 		End If
 		FlatTasks.Clear
@@ -87,7 +87,7 @@ Private Sub AStream_Terminated
 	srvr.Close
 	If astream.IsInitialized Then astream.Close
 	StateChanged
-	mBridge.MyLog("disconnected")
+	mBridge.MyLog(mBridge.B4JPrefix, mBridge.mOptions.B4JColor, "disconnected")
 End Sub
 
 Private Sub StateChanged

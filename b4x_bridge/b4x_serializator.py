@@ -39,6 +39,9 @@ class B4XSerializator:
         self._types = {k.__name__.lower(): k for k in types}
         self.prefer_doubles = prefer_doubles
 
+    def add_type(self, _type):
+        self._types[_type.__name__.lower()] = _type
+
     def convert_object_to_bytes(self, obj: Any) -> bytes:
         """
         Serializes a DataClass object to bytes. See B4X documentation for supported types.

@@ -19,8 +19,6 @@ class CommManager:
         print("Connecting to port: {}".format(self.port))
         reader, writer = await asyncio.open_connection("127.0.0.1", self.port)
         self.writer = writer
-        print("Connected to port: {}".format(self.port))
-
         asyncio.create_task(self.reader_loop(reader)).add_done_callback(task_done_callback)
         asyncio.create_task(self.writer_loop(writer)).add_done_callback(task_done_callback)
 

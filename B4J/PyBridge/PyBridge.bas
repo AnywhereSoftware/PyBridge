@@ -6,37 +6,82 @@ Version=10
 @EndOfDesignText@
 #Event: Connected
 #Event: Disconnected
+#Event: Event (Name As String, Params As Map)
 Sub Class_Globals
 	Type PyObject (Key As Int)
 	Private TASK_TYPE_RUN = 1, TASK_TYPE_GET = 2, TASK_TYPE_RUN_ASYNC = 3, TASK_TYPE_CLEAN = 4 _
-		, TASK_TYPE_ERROR = 5 As Int
+		, TASK_TYPE_ERROR = 5, TASK_TYPE_EVENT = 6 As Int
 	Type PyTask (TaskId As Int, TaskType As Int, Extra As List)
 	Type InternalPyTaskAsyncResult (PyObject As PyObject, Value As Object, Error As Boolean)
+	Type PyOptions (PythonExecutable As String, LocalPort As Int, _
+		PyBridgePath As String, PyOutColor As Int, PyErrColor As Int, B4JColor As Int, _
+		ForceCopyBridgeSrc As Boolean)
 	Private cleaner As JavaObject
 	Private comm As PyComm
 	Private mCallback As Object
 	Private mEventName As String
 	Private CleanerClass As String
-	Public Builtins As PyBuiltIns
+	Public Utils As PyUtils
 	Public ImportLib As PyImport
 	Private TaskIdCounter, PyObjectCounter As Int
 	Private EmptyList As List, EmptyMap As Map
 	Public Bridge As PyWrapper
+	Private CleanerIndex As Int
+	Private Shl As Shell
+	Public mOptions As PyOptions
+	Public PythonBridgeCodeVersion As String = "0.1"
+	Public PyOutPrefix = "(out)", PyErrPrefix = "(err)", B4JPrefix = "(b4j)" As String
 End Sub
 
 Public Sub Initialize (Callback As Object, EventName As String)
 	cleaner = cleaner.InitializeStatic("java.lang.ref.Cleaner").RunMethod("create", Null)
 	mCallback = Callback
 	mEventName = EventName
-	comm.Initialize(Me)
-	CleanerClass = GetType(Me) & "$CleanRunnable"
-	Bridge.Initialize(Me, CreatePyObject(1))
-	ImportLib.Initialize(Me, CreatePyObject(2))
-	Builtins.Initialize(Me, CreatePyObject(3))
-	PyObjectCounter = 100
 	EmptyList.Initialize
 	EmptyMap.Initialize
-	CheckKeysNeedToBeCleaned
+	CleanerClass = GetType(Me) & "$CleanRunnable"
+	mOptions.Initialize
+End Sub
+
+Public Sub Start (Options As PyOptions)
+	KillProcess
+	mOptions = Options
+	comm.Initialize(Me, Options.LocalPort)
+	PyObjectCounter = 100
+	If Options.PythonExecutable <> "" Then
+		If File.Exists(Options.PyBridgePath, "") = False or mOptions.ForceCopyBridgeSrc Then
+			File.Copy(File.DirAssets, "b4x_bridge.zip", Options.PyBridgePath, "")
+			MyLog(B4JPrefix, mOptions.B4JColor, "Python package copied to: " & Options.PyBridgePath)
+		End If
+		Dim Shl As Shell
+		Shl.Initialize("shl", Options.PythonExecutable, Array("-u", "-m", "b4x_bridge", "" & comm.Port))
+		Shl.SetEnvironmentVariables(CreateMap("PYTHONPATH": Options.PyBridgePath))
+		Shl.RunWithOutputEvents(-1)
+	End If
+	
+End Sub
+
+Private Sub Shl_StdOut (Buffer() As Byte, Length As Int)
+	MyLog(PyOutPrefix, mOptions.PyOutColor, BytesToString(Buffer, 0, Length, "utf8"))
+End Sub
+
+Private Sub Shl_StdErr (Buffer() As Byte, Length As Int)
+	MyLog(PyErrPrefix, mOptions.PyErrColor, BytesToString(Buffer, 0, Length, "utf8"))
+End Sub
+
+Private Sub shl_ProcessCompleted (Success As Boolean, ExitCode As Int, StdOut As String, StdErr As String)
+	MyLog(B4JPrefix, mOptions.B4JColor, $"Process completed. ExitCode: ${ExitCode}"$)
+End Sub
+
+Public Sub CreateOptions (PythonExecutable As String) As PyOptions
+	Dim opt As PyOptions
+	opt.Initialize
+	opt.PythonExecutable = PythonExecutable
+	opt.PyBridgePath = File.Combine(File.DirData("pybridge"), $"b4x_bridge_${PythonBridgeCodeVersion}.zip"$)
+	opt.B4JColor = 0xFF727272
+	opt.PyErrColor = 0xFFF74479
+	opt.PyOutColor = 0xFF446EF7
+	Return opt
 End Sub
 
 Private Sub CreatePyObject (Key As Int) As PyObject
@@ -52,11 +97,34 @@ Private Sub CreatePyObject (Key As Int) As PyObject
 End Sub
 
 Private Sub State_Changed (State As Int)
+	If comm.State = comm.STATE_CONNECTED Then
+		Bridge.Initialize(Me, CreatePyObject(1))
+		ImportLib.Initialize(Me, CreatePyObject(2))
+		Utils.Initialize(Me, CreatePyObject(3))
+		CheckKeysNeedToBeCleaned
+	Else
+		CleanerIndex = CleanerIndex + 1
+		KillProcess
+	End If
 	CallSubDelayed(mCallback, mEventName & IIf(State = comm.STATE_CONNECTED, "_connected", "_disconnected"))
 End Sub
 
+Private Sub KillProcess
+	Try
+		If mOptions.PythonExecutable <> "" And Shl.IsInitialized Then Shl.KillProcess
+	Catch
+		Log(LastException)
+	End Try
+End Sub
+
 Private Sub Task_Received(TASK As PyTask)
-	Log("task received")
+	If TASK.TaskType <> TASK_TYPE_EVENT Then
+		LogError("Unexpected message: " & TASK)
+	Else
+		Dim EventName As String = TASK.Extra.Get(0)
+		Dim Params As Map = TASK.Extra.Get(1)
+		CallSubDelayed3(mCallback, mEventName & "_event", EventName, Params)
+	End If
 End Sub
 
 Public Sub Run (Target As PyObject, Method As String, Args As List, KWArgs As Map) As PyObject
@@ -83,11 +151,11 @@ Public Sub RunAsync(Target As PyObject, Method As String, Args As List, KWArgs A
 	Return CheckForErrorsAndReturn(TASK, res)
 End Sub
 
-Private Sub CheckForErrorsAndReturn (Task As PyTask, PyObject As PyObject) As InternalPyTaskAsyncResult
-	If Task.TaskType = TASK_TYPE_ERROR Then
-		MyLog(Task.Extra.Get(0))
+Private Sub CheckForErrorsAndReturn (TASK As PyTask, PyObject As PyObject) As InternalPyTaskAsyncResult
+	If TASK.TaskType = TASK_TYPE_ERROR Then
+		MyLog(B4JPrefix, mOptions.PyErrColor, TASK.Extra.Get(0))
 	End If
-	Return CreateInternalPyTaskAsyncResult(PyObject, Task.Extra.Get(0), Task.TaskType == TASK_TYPE_ERROR)
+	Return CreateInternalPyTaskAsyncResult(PyObject, TASK.Extra.Get(0), TASK.TaskType == TASK_TYPE_ERROR)
 End Sub
 
 Public Sub Fetch(PyObject As PyObject) As ResumableSub
@@ -97,9 +165,15 @@ Public Sub Fetch(PyObject As PyObject) As ResumableSub
 	Return CheckForErrorsAndReturn(TASK, PyObject)
 End Sub
 
-Public Sub MyLog(s As String)
+Public Sub MyLog(prefix As String, clr As Int, s As String)
 	#if not(DISABLE_PYBRIDGE_LOGS)
-	Log("PyBridge: " & s)
+	s = s.Trim
+	If s.Length = 0 Then Return
+	If clr <> 0 Then
+		LogColor(prefix & " " & s, clr)
+	Else
+		Log(prefix & " " & s.Trim)
+	End If
 	#End If
 End Sub
 
@@ -123,7 +197,9 @@ Private Sub RegisterForCleaning (Py As PyObject)
 End Sub
 
 Private Sub CheckKeysNeedToBeCleaned
-	Do While True
+	CleanerIndex = CleanerIndex + 1
+	Dim MyIndex As Int = CleanerIndex
+	Do While MyIndex = CleanerIndex
 		Sleep(1000)
 		Dim c As JavaObject
 		Dim keys As List = c.InitializeStatic(CleanerClass).RunMethod("getKeys", Null)
