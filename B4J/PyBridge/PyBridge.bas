@@ -10,12 +10,12 @@ Version=10
 Sub Class_Globals
 	Type PyObject (Key As Int)
 	Private TASK_TYPE_RUN = 1, TASK_TYPE_GET = 2, TASK_TYPE_RUN_ASYNC = 3, TASK_TYPE_CLEAN = 4 _
-		, TASK_TYPE_ERROR = 5, TASK_TYPE_EVENT = 6, TASK_TYPE_PING = 7 As Int
+		, TASK_TYPE_ERROR = 5, TASK_TYPE_EVENT = 6, TASK_TYPE_PING = 7, TASK_TYPE_FLUSH = 8 As Int
 	Type PyTask (TaskId As Int, TaskType As Int, Extra As List)
 	Type InternalPyTaskAsyncResult (PyObject As PyObject, Value As Object, Error As Boolean)
 	Type PyOptions (PythonExecutable As String, LocalPort As Int, _
 		PyBridgePath As String, PyOutColor As Int, PyErrColor As Int, B4JColor As Int, _
-		ForceCopyBridgeSrc As Boolean, WatchDog As Int)
+		ForceCopyBridgeSrc As Boolean, WatchDogSeconds As Int)
 	Private cleaner As JavaObject
 	Private comm As PyComm
 	Private mCallback As Object
@@ -55,7 +55,7 @@ Public Sub Start (Options As PyOptions)
 			MyLog(B4JPrefix, mOptions.B4JColor, "Python package copied to: " & Options.PyBridgePath)
 		End If
 		Dim Shl As Shell
-		Shl.Initialize("shl", Options.PythonExecutable, Array As String("-u", "-m", "b4x_bridge", comm.Port, mOptions.WatchDog))
+		Shl.Initialize("shl", Options.PythonExecutable, Array As String("-u", "-m", "b4x_bridge", comm.Port, mOptions.WatchDogSeconds))
 		Shl.SetEnvironmentVariables(CreateMap("PYTHONPATH": Options.PyBridgePath, _
 			"PYTHONUTF8": 1))
 		Shl.RunWithOutputEvents(-1)
@@ -83,7 +83,7 @@ Public Sub CreateOptions (PythonExecutable As String) As PyOptions
 	opt.B4JColor = 0xFF727272
 	opt.PyErrColor = 0xFFF74479
 	opt.PyOutColor = 0xFF446EF7
-	opt.WatchDog = 60
+	opt.WatchDogSeconds = 60
 	Return opt
 End Sub
 
@@ -145,8 +145,11 @@ Public Sub Run (Target As PyObject, Method As String, Args As List, KWArgs As Ma
 	Return res
 End Sub
 
-Public Sub Flush
-	comm.Flush
+Public Sub Flush As ResumableSub
+	Dim task As PyTask = CreatePyTask(0, TASK_TYPE_FLUSH, Array())
+	comm.SendTaskAndWait(task)
+	Wait For (task) AsyncTask_Received (task As PyTask)
+	Return True
 End Sub
 
 Public Sub RunAsync(Target As PyObject, Method As String, Args As List, KWArgs As Map) As ResumableSub
@@ -222,7 +225,12 @@ End Sub
 
 public void add_shutdown_hook(final anywheresoftware.b4j.objects.Shell shl) {
 	Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-			shl.KillProcess();
+			try {
+				if (shl.IsInitialized())
+					shl.KillProcess();
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
         }));
 }
 

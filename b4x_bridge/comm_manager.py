@@ -3,7 +3,7 @@ import random
 import sys
 import time
 from asyncio import Queue, StreamReader, StreamWriter
-from typing import List, Tuple
+from typing import List
 
 from b4x_bridge.b4x_serializator import B4XSerializator
 from b4x_bridge.bridge import B4XBridge, Task, PyObject, TaskType, task_done_callback

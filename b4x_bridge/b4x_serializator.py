@@ -38,6 +38,7 @@ class B4XSerializator:
             types = []
         self._types = {k.__name__.lower(): k for k in types}
         self.prefer_doubles = prefer_doubles
+        self.converters: dict[type, Callable] = {}
 
     def add_type(self, _type):
         self._types[_type.__name__.lower()] = _type
@@ -70,6 +71,8 @@ class B4XSerializator:
                 if problem is not None: return problem
                 problem = self.is_serializable(value)
                 if problem is not None: return problem
+            return None
+        elif type(obj) in self.converters:
             return None
         elif type(obj).__name__.lower() in self._types:
             return None
@@ -114,6 +117,8 @@ class B4XSerializator:
         elif isinstance(obj, tuple):
             self._write_byte(self._T_NSARRAY)
             self._write_list(list(obj))
+        elif type(obj) in self.converters:
+            self._write_object(self.converters[type(obj)](obj))
         else:
             self._write_byte(self._T_TYPE)
             self._write_type(obj)

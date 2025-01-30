@@ -21,6 +21,7 @@ class TaskType(IntEnum):
     ERROR = 5
     EVENT = 6
     PING = 7
+    FLUSH = 8
 
 
 @dataclass(slots=True, frozen=True)
@@ -171,6 +172,8 @@ class B4XBridge:
                     asyncio.create_task(self.run_async(task, e))
                 elif task.task_type == TaskType.CLEAN:
                     self.clean(task)
+                elif task.task_type == TaskType.FLUSH:
+                    self.comm.write_queue.put_nowait(task)
 
     def kill(self):
         sys.exit()
