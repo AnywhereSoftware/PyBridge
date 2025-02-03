@@ -22,7 +22,6 @@ Sub Class_Globals
 	Private mEventName As String
 	Private CleanerClass As String
 	Public Utils As PyUtils
-	Public ImportLib As PyImport
 	Private TaskIdCounter, PyObjectCounter As Int
 	Private EmptyList As List, EmptyMap As Map
 	Public Bridge As PyWrapper
@@ -30,7 +29,7 @@ Sub Class_Globals
 	Private Shl As Shell
 	Public mOptions As PyOptions
 	Public PythonBridgeCodeVersion As String = "0.1"
-	Public PyOutPrefix = "(out)", PyErrPrefix = "(err)", B4JPrefix = "(b4j)" As String
+	Public PyOutPrefix = "(pyout)", PyErrPrefix = "(pyerr)", B4JPrefix = "(b4j)" As String
 End Sub
 
 Public Sub Initialize (Callback As Object, EventName As String)
@@ -44,6 +43,7 @@ Public Sub Initialize (Callback As Object, EventName As String)
 	
 End Sub
 
+'Starts the Python bridge server. Use Py.CreateOptions to create the Options object. 
 Public Sub Start (Options As PyOptions)
 	KillProcess
 	mOptions = Options
@@ -52,7 +52,7 @@ Public Sub Start (Options As PyOptions)
 	If Options.PythonExecutable <> "" Then
 		If File.Exists(Options.PyBridgePath, "") = False Or mOptions.ForceCopyBridgeSrc Then
 			File.Copy(File.DirAssets, "b4x_bridge.zip", Options.PyBridgePath, "")
-			MyLog(B4JPrefix, mOptions.B4JColor, "Python package copied to: " & Options.PyBridgePath)
+			PyLog(B4JPrefix, mOptions.B4JColor, "Python package copied to: " & Options.PyBridgePath)
 		End If
 		Dim Shl As Shell
 		Shl.Initialize("shl", Options.PythonExecutable, Array As String("-u", "-m", "b4x_bridge", comm.Port, mOptions.WatchDogSeconds))
@@ -64,17 +64,21 @@ Public Sub Start (Options As PyOptions)
 End Sub
 
 Private Sub Shl_StdOut (Buffer() As Byte, Length As Int)
-	MyLog(PyOutPrefix, mOptions.PyOutColor, BytesToString(Buffer, 0, Length, "utf8"))
+	PyLog(PyOutPrefix, mOptions.PyOutColor, BytesToString(Buffer, 0, Length, "utf8"))
 End Sub
 
 Private Sub Shl_StdErr (Buffer() As Byte, Length As Int)
-	MyLog(PyErrPrefix, mOptions.PyErrColor, BytesToString(Buffer, 0, Length, "utf8"))
+	PyLog(PyErrPrefix, mOptions.PyErrColor, BytesToString(Buffer, 0, Length, "utf8"))
 End Sub
 
 Private Sub shl_ProcessCompleted (Success As Boolean, ExitCode As Int, StdOut As String, StdErr As String)
-	MyLog(B4JPrefix, mOptions.B4JColor, $"Process completed. ExitCode: ${ExitCode}"$)
+	PyLog(B4JPrefix, mOptions.B4JColor, $"Process completed. ExitCode: ${ExitCode}"$)
 End Sub
 
+'Bridge options.
+'PythonExecutable - Path to the python executable file.
+'PyBridgePath (optional) - Folder where the Python client program will be stored. File.DirData("pybridge") by default.
+'Other settings include the log colors and the internal watchdog timeout.
 Public Sub CreateOptions (PythonExecutable As String) As PyOptions
 	Dim opt As PyOptions
 	opt.Initialize
@@ -83,7 +87,7 @@ Public Sub CreateOptions (PythonExecutable As String) As PyOptions
 	opt.B4JColor = 0xFF727272
 	opt.PyErrColor = 0xFFF74479
 	opt.PyOutColor = 0xFF446EF7
-	opt.WatchDogSeconds = 60
+	opt.WatchDogSeconds = 30
 	Return opt
 End Sub
 
@@ -102,8 +106,7 @@ End Sub
 Private Sub State_Changed (State As Int)
 	If comm.State = comm.STATE_CONNECTED Then
 		Bridge.Initialize(Me, CreatePyObject(1))
-		ImportLib.Initialize(Me, CreatePyObject(2))
-		Utils.Initialize(Me, CreatePyObject(3))
+		Utils.Initialize(Me, CreatePyObject(3), CreatePyObject(2))
 		CheckKeysNeedToBeCleaned
 		If Shl.IsInitialized Then
 			Me.as(JavaObject).RunMethod("add_shutdown_hook", Array(Shl))
@@ -115,6 +118,7 @@ Private Sub State_Changed (State As Int)
 	CallSubDelayed(mCallback, mEventName & IIf(State = comm.STATE_CONNECTED, "_connected", "_disconnected"))
 End Sub
 
+'Kills the Python process.
 Public Sub KillProcess
 	Try
 		If mOptions.PythonExecutable <> "" And Shl.IsInitialized Then Shl.KillProcess
@@ -135,6 +139,7 @@ Private Sub Task_Received(TASK As PyTask)
 	End If
 End Sub
 
+'Use PyWrapper.Run instead.
 Public Sub Run (Target As PyObject, Method As String, Args As List, KWArgs As Map) As PyObject
 	Dim res As PyObject = CreatePyObject(0)
 	If Args = Null Or Args.IsInitialized = False Then Args = EmptyList
@@ -145,6 +150,8 @@ Public Sub Run (Target As PyObject, Method As String, Args As List, KWArgs As Ma
 	Return res
 End Sub
 
+'Flushes the output queue. Can be used with Wait For to wait for the Python process to complete executing the queue.
+'<code>Wait For (py.Flush) Complete (Unused As Boolean)</code>
 Public Sub Flush As ResumableSub
 	Dim task As PyTask = CreatePyTask(0, TASK_TYPE_FLUSH, Array())
 	comm.SendTaskAndWait(task)
@@ -152,6 +159,7 @@ Public Sub Flush As ResumableSub
 	Return True
 End Sub
 
+'Use PyWrapper.RunAsync instead.
 Public Sub RunAsync(Target As PyObject, Method As String, Args As List, KWArgs As Map) As ResumableSub
 	Dim res As PyObject = CreatePyObject(0)
 	If Args = Null Or Args.IsInitialized = False Then Args = EmptyList
@@ -164,11 +172,12 @@ End Sub
 
 Private Sub CheckForErrorsAndReturn (TASK As PyTask, PyObject As PyObject) As InternalPyTaskAsyncResult
 	If TASK.TaskType = TASK_TYPE_ERROR Then
-		MyLog(B4JPrefix, mOptions.PyErrColor, TASK.Extra.Get(0))
+		PyLog(B4JPrefix, mOptions.PyErrColor, TASK.Extra.Get(0))
 	End If
 	Return CreateInternalPyTaskAsyncResult(PyObject, TASK.Extra.Get(0), TASK.TaskType == TASK_TYPE_ERROR)
 End Sub
 
+'Use PyWrapper.Fetch instead.
 Public Sub Fetch(PyObject As PyObject) As ResumableSub
 	Dim TASK As PyTask = CreatePyTask(0, TASK_TYPE_GET, Array(PyObject.Key))
 	comm.SendTaskAndWait(TASK)
@@ -176,18 +185,28 @@ Public Sub Fetch(PyObject As PyObject) As ResumableSub
 	Return CheckForErrorsAndReturn(TASK, PyObject)
 End Sub
 
-Public Sub MyLog(prefix As String, clr As Int, s As String)
+'Used internally. Note that it expects a sub in the Main module with the following code:
+'<code>Public Sub PyLogHelper (Text As String, Clr As Int)
+' LogColor (Text, Clr)
+'End Sub</code>
+Public Sub PyLog(Prefix As String, Clr As Int, O As Object)
 	#if not(DISABLE_PYBRIDGE_LOGS)
-	s = s.Trim
-	If s.Length = 0 Then Return
-	If clr <> 0 Then
-		LogColor(prefix & " " & s, clr)
+	If o Is PyWrapper Then
+		Utils.Print(o)
 	Else
-		Log(prefix & " " & s.Trim)
+		Dim s As String = o
+		s = s.Trim
+		If s.Length = 0 Then Return
+		If Clr <> 0 Then
+			Main.PyLogHelper(Prefix & " " & s, Clr)
+		Else
+			Log(Prefix & " " & s.Trim)
+		End If
 	End If
 	#End If
 End Sub
 
+'Internal method
 Public Sub CreatePyTask (TaskId As Int, TaskType As Int, Extra As List) As PyTask
 	Dim t1 As PyTask
 	t1.Initialize

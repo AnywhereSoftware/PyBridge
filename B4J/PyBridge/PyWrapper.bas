@@ -12,15 +12,18 @@ Sub Class_Globals
 	Private mValue As Object
 End Sub
 
+'Internal method.
 Public Sub Initialize (Bridge As PyBridge, Key As PyObject)
 	mKey = Key
 	mBridge = Bridge
 End Sub
 
+'Runs a method with the list of arguments. Returns a PyWrapper with the unfetched result.
 Public Sub Run (Method As String, Args As List) As PyWrapper
 	Return Run2(Method, Args, Null)
 End Sub
 
+'Same as Run, with an additional map of arguments.
 Public Sub Run2 (Method As String, Args As List, KWArgs As Map) As PyWrapper
 	UnwrapList(Args)
 	UnwrapMap(KWArgs)
@@ -87,21 +90,26 @@ Private Sub UnwrapMap (Map As Map)
 	Next
 End Sub
 
+'Fetches the value of a remote Python object. Avoid fetching values when possible. Fetching values requires waiting for the queue to be processed.
+'<code>Wait For (PyWrapper1.Fetch) Complete (Result As PyWrapper)</code>
 Public Sub Fetch As ResumableSub	
 	Wait For (mBridge.Fetch(mKey)) Complete (Result As InternalPyTaskAsyncResult)
 	Return Wrap(Result)
 End Sub
 
+'Returns a field (attribute) of this object. Note that its value is not fetched.
 Public Sub GetField (Field As String) As PyWrapper
 	Return mBridge.Utils.BuiltIns.Run("getattr", Array(mKey, Field))
 End Sub
 
+'Runs an async method.
+'<code>Wait For (PyWrapper1.RunAsync ("MethodName", Array("arg1")) Complete (Result As PyWrapper)</code>
 Public Sub RunAsync (Method As String, Args As List) As ResumableSub
 	UnwrapList(Args)
 	Wait For (mBridge.RunAsync(mKey, Method, Args, Null)) Complete (Result As InternalPyTaskAsyncResult)
 	Return Wrap(Result)
 End Sub
-
+'Similar to RunAsync with an additional map of arguments.
 Public Sub RunAsync2 (Method As String, Args As List, KWArgs As Map) As ResumableSub
 	UnwrapList(Args)
 	UnwrapMap(KWArgs)
@@ -121,6 +129,7 @@ Private Sub Wrap (Result As InternalPyTaskAsyncResult) As PyWrapper
 	Return w
 End Sub
 
+'Gets the fetched value. Will raise an exception if the value was not fetched yet, or if there was any error.
 Public Sub getValue As Object
 	If mError Then
 		Me.As(JavaObject).RunMethod("raiseError", Array(mValue))
@@ -133,6 +142,20 @@ End Sub
 
 Public Sub getIsFetched As Boolean
 	Return mFetched
+End Sub
+
+'Remotely prints the object.
+Public Sub Print
+	Print2("", "")
+End Sub
+
+'Similar to Print with an additional prefix and suffix strings, separated by spaces.
+Public Sub Print2 (Prefix As String, Suffix As String)
+	If mFetched Then
+		Log(mValue)
+	Else
+		mBridge.Utils.Print(Array(Prefix, Me, Suffix))
+	End If
 End Sub
 
 #if java

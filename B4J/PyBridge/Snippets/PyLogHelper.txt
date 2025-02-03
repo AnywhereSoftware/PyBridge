@@ -1,0 +1,4 @@
+'Workaround for LogColor not working from b4xlib libraries. This method should be added to the Main module.
+Public Sub PyLogHelper (Text As String, Clr As Int)
+	LogColor(Text, Clr)
+End Sub

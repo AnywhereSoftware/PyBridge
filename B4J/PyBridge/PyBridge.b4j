@@ -5,22 +5,22 @@ File2=Layout1.bjl
 FileGroup1=Default Group
 FileGroup2=Default Group
 Group=Default Group
-Library1=javaobject
-Library2=jcore
-Library3=jfx
-Library4=jnetwork
-Library5=jrandomaccessfile
-Library6=jshell
-Library7=jxui
-Library8=b4xcollections
+Library1=b4xcollections
+Library2=javaobject
+Library3=jcore
+Library4=jfx
+Library5=jnetwork
+Library6=jrandomaccessfile
+Library7=jshell
+Library8=jxui
+Library9=byteconverter
 Module1=PyBridge
 Module2=PyComm
-Module3=PyImport
-Module4=PyUtils
-Module5=PyWrapper
+Module3=PyUtils
+Module4=PyWrapper
 NumberOfFiles=2
-NumberOfLibraries=8
-NumberOfModules=5
+NumberOfLibraries=9
+NumberOfModules=4
 Version=10
 @EndOfDesignText@
 #Region Project Attributes 
@@ -35,7 +35,6 @@ Sub Process_Globals
 	Private Button1 As B4XView
 	Private Py As PyBridge
 	Private Time As Long
-	Private Test As PyWrapper
 	Private WebView1 As WebView
 	Type OcrPoint (X As Int, Y As Int)
 	Type OcrResult (Points As List, Text As String, Score As Double)
@@ -58,77 +57,46 @@ Private Sub Bridge_Disconnected
 End Sub
 
 Private Sub Start
-	Dim opt As PyOptions = Py.CreateOptions("D:\python\python\python.exe")
+'	Dim Linux As String = "/home/erel/python_env/bin/python"
+	Dim PythonPath As String = "D:\python\python\python.exe"
+	
+	Dim opt As PyOptions = Py.CreateOptions(PythonPath)
 '	opt.LocalPort = 53271
 '	opt.PythonExecutable = ""
-	opt.ForceCopyBridgeSrc = True
+'	opt.ForceCopyBridgeSrc = True
 	Py.Start(opt)
 	Wait For Bridge_Connected
-	Wait For (RegisterOcrTypes) Complete (Unused As PyWrapper)
-	Dim reader As PyWrapper = CreateOcrReader(Array("en"))
-	Wait For (Py.Flush) Complete (u As Boolean)
-	Wait For (Py.Flush) Complete (u As Boolean)
-	Wait For (Py.Flush) Complete (u As Boolean)
-	Sleep(0)
-	Wait For (Py.Flush) Complete (u As Boolean)
-	Wait For (Py.Flush) Complete (u As Boolean)
-	Wait For (Py.Flush) Complete (u As Boolean)
-	Log(u)
-	Py.Utils.Print(reader)
-	Wait For (OcrRead(reader, "C:\Users\H\Downloads\Clipboard Image.jpg")) Complete (Result As PyWrapper)
-	Dim rows As List = Result.Value
-	Log(rows)
+	Py.Utils.BuiltIns.Run("print", Array(PyExample(10, 20)))
+	Py.Utils.RunNoArgsCode($"
+import torch
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(device)
+"$)
+	Py.Utils.RunNoArgsCode("print('aaa', device)")
 End Sub
 
-Private Sub RegisterOcrTypes As ResumableSub
+
+
+Public Sub PyExample (X As Object, Y As Object) As PyWrapper
 	Dim Code As String = $"
-from dataclasses import dataclass
-@dataclass
-class OcrPoint:
-	X: int
-	Y: int
-	def __post_init__(self):
-		self.X = int(self.X)
-		self.Y = int(self.Y)
-
-@dataclass
-class OcrResult:
-	Points: list
-	Text: str
-	Score: float
-	def __init__ (self, ocr):
-		self.Points = [OcrPoint(p[0], p[1]) for p in ocr[0]]
-		self.Text = ocr[1]
-		self.Score = ocr[2]
-		
-def RegisterOcrTypes(bridge):
-	bridge.comm.serializator.add_type(OcrPoint)
-	bridge.comm.serializator.add_type(OcrResult)
+def PyExample (x, y):
+	return x + y
 "$
-	Wait For (Py.Utils.RunCode("RegisterOcrTypes", Array(Py.Bridge), Code).Fetch) Complete (Result As PyWrapper)
-	Return Result
+	Return Py.Utils.RunCode("PyExample", Array(X, Y), Code)
 End Sub
 
-
-Private Sub CreateOcrReader(Languages As List) As PyWrapper
+Public Sub PyExample2 (X As Object, Y As Object) As PyWrapper
 	Dim Code As String = $"
-import easyocr
-def CreateOcrReader(Languages):
-	return easyocr.Reader(Languages)
+def PyExample (x, y):
+	return x + y
 "$
-	Return Py.Utils.RunCode("CreateOcrReader", Array(Languages), Code)
+	Return Py.Utils.RunCode("PyExample", Array(X, Y), Code)
 End Sub
 
-Private Sub OcrRead(Reader As PyWrapper, Path As String) As ResumableSub
-	Dim Code As String = $"
-def OcrRead(reader, path):
-	res = reader.readtext(path)
-	return [OcrResult(row) for row in res]
-"$
-	Wait For (Py.Utils.RunCode("OcrRead", Array(Reader, Path), Code).Fetch) Complete (Result As PyWrapper)
-	Return Result
+'Workaround for LogColor not working from b4xlib libraries.
+Public Sub PyLogHelper (Text As String, Clr As Int)
+	LogColor(Text, Clr)
 End Sub
-
 
 
 Private Sub Bridge_Event (Name As String, Params As Map)

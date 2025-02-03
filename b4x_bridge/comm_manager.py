@@ -17,7 +17,7 @@ class CommManager:
         self.read_queue: Queue[List[Task]] = Queue()
         self.write_queue: Queue[Task] = Queue()
         self.writer = None
-        self.last_pong: time = time.time()
+        self.number_of_pings = 0
 
     async def connect(self):
         print("Connecting to port: {}".format(self.port))
@@ -30,11 +30,12 @@ class CommManager:
     async def heartbeat(self):
         r = random.Random().randint(1, 10000)
         while True:
-            await asyncio.sleep(3)
+            await asyncio.sleep(1)
             if self.bridge.max_time_until_pong > 0:
                 self.write_queue.put_nowait(Task(task_type=TaskType.PING, id=0, extra=[]))
-                if time.time() - self.bridge.max_time_until_pong > self.last_pong:
+                if self.number_of_pings > self.bridge.max_time_until_pong:
                     sys.exit()
+                self.number_of_pings += 1
 
 
 
@@ -48,7 +49,7 @@ class CommManager:
             for i in range(0, len(flat_tasks), 3):
                 task = Task(id=flat_tasks[i], task_type=TaskType(flat_tasks[i + 1]), extra=flat_tasks[i + 2])
                 if task.task_type == TaskType.PING:
-                    self.last_pong = time.time()
+                    self.number_of_pings = 0
                 else:
                     tasks.append(task)
             self.read_queue.put_nowait(tasks)

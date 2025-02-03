@@ -27,7 +27,7 @@ Public Sub Initialize (Bridge As PyBridge, LocalPort As Int)
 	WaitingTasks.Initialize
 	Port = srvr.As(JavaObject).GetFieldJO("ssocket").RunMethod("getLocalPort", Null)
 	mBridge = Bridge
-	mBridge.MyLog(mBridge.B4JPrefix, mBridge.mOptions.B4JColor, "Server is listening on port: " & Port)
+	mBridge.PyLog(mBridge.B4JPrefix, mBridge.mOptions.B4JColor, "Server is listening on port: " & Port)
 	srvr.Listen
 	FlatTasks.Initialize
 End Sub
@@ -44,7 +44,7 @@ End Sub
 
 Private Sub Srvr_NewConnection (Successful As Boolean, NewSocket As Socket)
 	If Successful Then
-		mBridge.MyLog(mBridge.B4JPrefix, mBridge.mOptions.B4JColor, "connected")
+		mBridge.PyLog(mBridge.B4JPrefix, mBridge.mOptions.B4JColor, "connected")
 '		astream.OutputQueueMaxSize = 1000000
 		astream.InitializePrefix(NewSocket.InputStream, True, NewSocket.OutputStream, "astream")
 		State = STATE_CONNECTED
@@ -72,7 +72,7 @@ Public Sub Flush
 	If FlatTasks.Size > 0 Then
 		Dim res As Boolean = astream.Write(ser.ConvertObjectToBytes(FlatTasks))
 		If astream.OutputQueueSize > 100 Then
-			mBridge.MyLog(mBridge.B4JPrefix, mBridge.mOptions.B4JColor, "Output queue size: " & astream.OutputQueueSize)
+			mBridge.PyLog(mBridge.B4JPrefix, mBridge.mOptions.B4JColor, "Output queue size: " & astream.OutputQueueSize)
 		End If
 		If res = False And astream.OutputQueueSize > 0 Then
 			LogError("Queue is full!")
@@ -97,7 +97,7 @@ Private Sub AStream_Terminated
 	srvr.Close
 	If astream.IsInitialized Then astream.Close
 	StateChanged
-	mBridge.MyLog(mBridge.B4JPrefix, mBridge.mOptions.B4JColor, "disconnected")
+	mBridge.PyLog(mBridge.B4JPrefix, mBridge.mOptions.B4JColor, "disconnected")
 End Sub
 
 Private Sub StateChanged
