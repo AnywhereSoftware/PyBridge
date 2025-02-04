@@ -7,8 +7,8 @@ Version=10
 #ModuleVisibility: B4XLib
 Sub Class_Globals
 	Private srvr As ServerSocket
-	Public const STATE_DISCONNECTED = 1, STATE_CONNECTED = 2 As Int
-	Public State As Int = STATE_DISCONNECTED
+	Public const STATE_DISCONNECTED = 1, STATE_CONNECTED = 2, STATE_WAITING_FOR_CONNECTION = 3 As Int
+	Public State As Int
 	Public Port As Int
 	Private mBridge As PyBridge
 	Private astream As AsyncStreams
@@ -30,6 +30,7 @@ Public Sub Initialize (Bridge As PyBridge, LocalPort As Int)
 	mBridge.PyLog(mBridge.B4JPrefix, mBridge.mOptions.B4JColor, "Server is listening on port: " & Port)
 	srvr.Listen
 	FlatTasks.Initialize
+	State = STATE_WAITING_FOR_CONNECTION
 End Sub
 
 Private Sub InitializeWithLoopback(Server As ServerSocket, EventName As String, vPort As Int)
@@ -47,9 +48,15 @@ Private Sub Srvr_NewConnection (Successful As Boolean, NewSocket As Socket)
 		mBridge.PyLog(mBridge.B4JPrefix, mBridge.mOptions.B4JColor, "connected")
 '		astream.OutputQueueMaxSize = 1000000
 		astream.InitializePrefix(NewSocket.InputStream, True, NewSocket.OutputStream, "astream")
-		State = STATE_CONNECTED
 		Sleep(100)
-		StateChanged
+		ChangeState(STATE_CONNECTED)
+	End If
+End Sub
+
+Public Sub CloseServer
+	If State = STATE_CONNECTED Or State = STATE_WAITING_FOR_CONNECTION Then
+		srvr.Close
+		ChangeState(STATE_DISCONNECTED)
 	End If
 End Sub
 
@@ -92,16 +99,18 @@ Private Sub AStream_Error
 End Sub
 
 Private Sub AStream_Terminated
-	State = STATE_DISCONNECTED
+	ChangeState(STATE_DISCONNECTED)
 	FlatTasks.Clear
 	srvr.Close
 	If astream.IsInitialized Then astream.Close
-	StateChanged
 	mBridge.PyLog(mBridge.B4JPrefix, mBridge.mOptions.B4JColor, "disconnected")
 End Sub
 
-Private Sub StateChanged
-	CallSub2(mBridge, "state_changed", State)
+Private Sub ChangeState (NewState As Int)
+	If NewState = State Then Return
+	Dim OldState As Int = State
+	State = NewState
+	CallSub3(mBridge, "state_changed", OldState, State)
 End Sub
 
 

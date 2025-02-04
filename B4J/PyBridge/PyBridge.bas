@@ -4,7 +4,7 @@ ModulesStructureVersion=1
 Type=Class
 Version=10
 @EndOfDesignText@
-#Event: Connected
+#Event: Connected (Success As Boolean)
 #Event: Disconnected
 #Event: Event (Name As String, Params As Map)
 Sub Class_Globals
@@ -73,6 +73,8 @@ End Sub
 
 Private Sub shl_ProcessCompleted (Success As Boolean, ExitCode As Int, StdOut As String, StdErr As String)
 	PyLog(B4JPrefix, mOptions.B4JColor, $"Process completed. ExitCode: ${ExitCode}"$)
+	Dim Shl As Shell
+	comm.CloseServer
 End Sub
 
 'Bridge options.
@@ -103,8 +105,8 @@ Private Sub CreatePyObject (Key As Int) As PyObject
 	Return t1
 End Sub
 
-Private Sub State_Changed (State As Int)
-	If comm.State = comm.STATE_CONNECTED Then
+Private Sub State_Changed (OldState As Int, NewState As Int)
+	If NewState = comm.STATE_CONNECTED Then
 		Bridge.Initialize(Me, CreatePyObject(1))
 		Utils.Initialize(Me, CreatePyObject(3), CreatePyObject(2))
 		CheckKeysNeedToBeCleaned
@@ -115,7 +117,11 @@ Private Sub State_Changed (State As Int)
 		CleanerIndex = CleanerIndex + 1
 		KillProcess
 	End If
-	CallSubDelayed(mCallback, mEventName & IIf(State = comm.STATE_CONNECTED, "_connected", "_disconnected"))
+	If NewState = comm.STATE_CONNECTED Or (OldState = comm.STATE_WAITING_FOR_CONNECTION And NewState = comm.STATE_DISCONNECTED) Then
+		CallSubDelayed2(mCallback, mEventName & "_connected", NewState = comm.STATE_CONNECTED)
+	Else if SubExists(mCallback, mEventName & "_disconnected") Then
+		CallSubDelayed(mCallback, mEventName & "_disconnected")
+	End If
 End Sub
 
 'Kills the Python process.

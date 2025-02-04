@@ -13,13 +13,12 @@ Library5=jnetwork
 Library6=jrandomaccessfile
 Library7=jshell
 Library8=jxui
-Library9=byteconverter
 Module1=PyBridge
 Module2=PyComm
 Module3=PyUtils
 Module4=PyWrapper
 NumberOfFiles=2
-NumberOfLibraries=9
+NumberOfLibraries=8
 NumberOfModules=4
 Version=10
 @EndOfDesignText@
@@ -64,11 +63,17 @@ Private Sub Start
 '	opt.PythonExecutable = ""
 '	opt.ForceCopyBridgeSrc = True
 	Py.Start(opt)
-	Wait For Bridge_Connected
+	Wait For Bridge_Connected (Success As Boolean)
+	If Success = False Then
+		Log("failed to connect")
+		Return
+	End If
 	Py.Utils.RunNoArgsCode($"
 import torch
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(device)
+import sys
+sys.exit()
 "$)
 	Py.Utils.RunNoArgsCode("print('aaa', device)")
 End Sub
