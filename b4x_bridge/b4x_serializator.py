@@ -58,7 +58,7 @@ class B4XSerializator:
         return b
 
     def is_serializable(self, obj: Any) -> Optional[Type]:
-        if obj is None or isinstance(obj, (bool, int, float, str, bytes)):
+        if obj is None or isinstance(obj, (bool, int, float, str, bytes, bytearray)):
             return None
         if isinstance(obj, (list, tuple)):
             for item in obj:
@@ -110,7 +110,7 @@ class B4XSerializator:
         elif isinstance(obj, dict):
             self._write_byte(self._T_MAP)
             self._write_map(obj)
-        elif isinstance(obj, bytes):
+        elif isinstance(obj, (bytes, bytearray)):
             self._write_byte(self._T_NSDATA)
             self._write_int(len(obj))
             self._writer.write(obj)

@@ -34,7 +34,6 @@ Sub Process_Globals
 	Private xui As XUI 
 	Private Button1 As B4XView
 	Private Py As PyBridge
-	Private Time As Long
 	Private WebView1 As WebView
 	Type OcrPoint (X As Int, Y As Int)
 	Type OcrResult (Points As List, Text As String, Score As Double)
@@ -66,7 +65,6 @@ Private Sub Start
 '	opt.ForceCopyBridgeSrc = True
 	Py.Start(opt)
 	Wait For Bridge_Connected
-	Py.Utils.BuiltIns.Run("print", Array(PyExample(10, 20)))
 	Py.Utils.RunNoArgsCode($"
 import torch
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -75,23 +73,6 @@ print(device)
 	Py.Utils.RunNoArgsCode("print('aaa', device)")
 End Sub
 
-
-
-Public Sub PyExample (X As Object, Y As Object) As PyWrapper
-	Dim Code As String = $"
-def PyExample (x, y):
-	return x + y
-"$
-	Return Py.Utils.RunCode("PyExample", Array(X, Y), Code)
-End Sub
-
-Public Sub PyExample2 (X As Object, Y As Object) As PyWrapper
-	Dim Code As String = $"
-def PyExample (x, y):
-	return x + y
-"$
-	Return Py.Utils.RunCode("PyExample", Array(X, Y), Code)
-End Sub
 
 'Workaround for LogColor not working from b4xlib libraries.
 Public Sub PyLogHelper (Text As String, Clr As Int)
@@ -105,6 +86,6 @@ Private Sub Bridge_Event (Name As String, Params As Map)
 	o.Key = key
 	Dim w As PyWrapper
 	w.Initialize(Py, o)
-	Py.Utils.Print(w)
+	Py.Utils.Print(Array(w))
 End Sub
 

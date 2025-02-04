@@ -28,7 +28,7 @@ Sub Class_Globals
 	Private CleanerIndex As Int
 	Private Shl As Shell
 	Public mOptions As PyOptions
-	Public PythonBridgeCodeVersion As String = "0.1"
+	Public PythonBridgeCodeVersion As String = "0.11"
 	Public PyOutPrefix = "(pyout)", PyErrPrefix = "(pyerr)", B4JPrefix = "(b4j)" As String
 End Sub
 
