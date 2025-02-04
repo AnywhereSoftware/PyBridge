@@ -19,7 +19,7 @@ Sub Class_Globals
 End Sub
 
 Public Sub Initialize (Bridge As PyBridge, LocalPort As Int)
-	InitializeWithIp(srvr, "srvr", LocalPort, Null)
+	InitializeWithLoopback(srvr, "srvr", LocalPort)
 	Dim jo As JavaObject
 	Dim correctClassesNames As Map = jo.InitializeStatic("anywheresoftware.b4a.randomaccessfile.RandomAccessFile").GetField("correctedClasses")
 	correctClassesNames.Put("_pyobject", GetType(Bridge) & "$_pyobject")
@@ -32,10 +32,10 @@ Public Sub Initialize (Bridge As PyBridge, LocalPort As Int)
 	FlatTasks.Initialize
 End Sub
 
-Private Sub InitializeWithIp(Server As ServerSocket, EventName As String, vPort As Int, ip As Object)
-	Server.Initialize(0, EventName)
+Private Sub InitializeWithLoopback(Server As ServerSocket, EventName As String, vPort As Int)
+	Server.Initialize(-1, EventName)
 	Dim ia As JavaObject
-	ia = ia.InitializeStatic("java.net.InetAddress").RunMethod("getByName", Array(ip))
+	ia = ia.InitializeStatic("java.net.InetAddress").RunMethod("getLoopbackAddress", Null)
 	Dim s As JavaObject = Server
 	Dim socket As JavaObject
 	socket.InitializeNewInstance("java.net.ServerSocket", Array(vPort, 50, ia))
