@@ -54,6 +54,10 @@ Private Sub Bridge_Disconnected
 	Log("Disconnected")
 End Sub
 
+Private Sub MainForm_Closed
+	Py.KillProcess
+End Sub
+
 Private Sub Start
 '	Dim Linux As String = "/home/erel/python_env/bin/python"
 	Dim PythonPath As String = "D:\python\python\python.exe"
@@ -62,6 +66,7 @@ Private Sub Start
 '	opt.LocalPort = 53271
 '	opt.PythonExecutable = ""
 '	opt.ForceCopyBridgeSrc = True
+	opt.PyCacheFolder = "C:\Users\H\Downloads\projects"
 	Py.Start(opt)
 	Wait For Bridge_Connected (Success As Boolean)
 	If Success = False Then
@@ -69,11 +74,12 @@ Private Sub Start
 		Return
 	End If
 	Py.Utils.RunNoArgsCode($"
+import time
+n = time.time()
 import torch
+print(time.time() - n)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(device)
-import sys
-sys.exit()
 "$)
 	Py.Utils.RunNoArgsCode("print('aaa', device)")
 End Sub

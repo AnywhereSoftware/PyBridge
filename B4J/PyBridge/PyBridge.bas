@@ -15,7 +15,7 @@ Sub Class_Globals
 	Type InternalPyTaskAsyncResult (PyObject As PyObject, Value As Object, Error As Boolean)
 	Type PyOptions (PythonExecutable As String, LocalPort As Int, _
 		PyBridgePath As String, PyOutColor As Int, PyErrColor As Int, B4JColor As Int, _
-		ForceCopyBridgeSrc As Boolean, WatchDogSeconds As Int)
+		ForceCopyBridgeSrc As Boolean, WatchDogSeconds As Int, PyCacheFolder As String)
 	Private cleaner As JavaObject
 	Private comm As PyComm
 	Private mCallback As Object
@@ -56,8 +56,10 @@ Public Sub Start (Options As PyOptions)
 		End If
 		Dim Shl As Shell
 		Shl.Initialize("shl", Options.PythonExecutable, Array As String("-u", "-m", "b4x_bridge", comm.Port, mOptions.WatchDogSeconds))
-		Shl.SetEnvironmentVariables(CreateMap("PYTHONPATH": Options.PyBridgePath, _
-			"PYTHONUTF8": 1))
+		Dim env As Map = CreateMap("PYTHONPATH": Options.PyBridgePath, _
+			"PYTHONUTF8": 1)
+		If Options.PyCacheFolder <> "" Then env.Put("PYTHONPYCACHEPREFIX", Options.PyCacheFolder)
+		Shl.SetEnvironmentVariables(env)
 		Shl.RunWithOutputEvents(-1)
 	End If
 	
@@ -68,7 +70,9 @@ Private Sub Shl_StdOut (Buffer() As Byte, Length As Int)
 End Sub
 
 Private Sub Shl_StdErr (Buffer() As Byte, Length As Int)
-	PyLog(PyErrPrefix, mOptions.PyErrColor, BytesToString(Buffer, 0, Length, "utf8"))
+	If comm.State = comm.STATE_CONNECTED Then
+		PyLog(PyErrPrefix, mOptions.PyErrColor, BytesToString(Buffer, 0, Length, "utf8"))
+	End If
 End Sub
 
 Private Sub shl_ProcessCompleted (Success As Boolean, ExitCode As Int, StdOut As String, StdErr As String)
@@ -90,6 +94,7 @@ Public Sub CreateOptions (PythonExecutable As String) As PyOptions
 	opt.PyErrColor = 0xFFF74479
 	opt.PyOutColor = 0xFF446EF7
 	opt.WatchDogSeconds = 30
+	opt.PyCacheFolder = File.DirData("pybridge")
 	Return opt
 End Sub
 
@@ -110,9 +115,6 @@ Private Sub State_Changed (OldState As Int, NewState As Int)
 		Bridge.Initialize(Me, CreatePyObject(1))
 		Utils.Initialize(Me, CreatePyObject(3), CreatePyObject(2))
 		CheckKeysNeedToBeCleaned
-		If Shl.IsInitialized Then
-			Me.as(JavaObject).RunMethod("add_shutdown_hook", Array(Shl))
-		End If
 	Else
 		CleanerIndex = CleanerIndex + 1
 		KillProcess
@@ -124,10 +126,15 @@ Private Sub State_Changed (OldState As Int, NewState As Int)
 	End If
 End Sub
 
-'Kills the Python process.
+'Kills the Python process and closes the connection.
 Public Sub KillProcess
 	Try
-		If mOptions.PythonExecutable <> "" And Shl.IsInitialized Then Shl.KillProcess
+		If comm.IsInitialized Then
+			comm.CloseServer
+		End If
+		If mOptions.PythonExecutable <> "" And Shl.IsInitialized Then
+			Shl.KillProcess
+		End If
 	Catch
 		Log(LastException)
 	End Try
@@ -247,18 +254,6 @@ End Sub
 
 
 #if Java
-
-public void add_shutdown_hook(final anywheresoftware.b4j.objects.Shell shl) {
-	Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-			try {
-				if (shl.IsInitialized())
-					shl.KillProcess();
-			} catch (Exception e) {
-				e.printStackTrace();
-			}
-        }));
-}
-
 public static class CleanRunnable implements Runnable {
 	private final int key;
 	private final static java.util.List<Object> listOfKeys = java.util.Collections.synchronizedList(new java.util.ArrayList<Object>());

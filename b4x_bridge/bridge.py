@@ -55,7 +55,7 @@ class B4XBridge:
         }
         from .comm_manager import CommManager
         self.comm = CommManager(self, port)
-        self.version = "0.1"
+        self.version = "0.11"
         self.max_time_until_pong = watchdog
 
     def register_dataclass(self, cls):

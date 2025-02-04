@@ -55,6 +55,9 @@ End Sub
 
 Public Sub CloseServer
 	If State = STATE_CONNECTED Or State = STATE_WAITING_FOR_CONNECTION Then
+		If astream.IsInitialized Then
+			astream.Close
+		End If
 		srvr.Close
 		ChangeState(STATE_DISCONNECTED)
 	End If
