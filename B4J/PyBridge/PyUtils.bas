@@ -5,21 +5,22 @@ Type=Class
 Version=10
 @EndOfDesignText@
 Sub Class_Globals
-	Public BuiltIns As PyWrapper
-	Public EvalGlobals As PyWrapper
-	Public ImportLib As PyWrapper
+	Public Builtins As PyWrapper
+	Public InternalEvalGlobals As PyWrapper
+	Public InternalImportLib As PyWrapper
 	Public Sys As PyWrapper
 	Private mBridge As PyBridge
 	Private RegisteredMembers As B4XSet
+	Private Epsilon As Double = 0.0000001
 End Sub
 
 'Internal method. use Py.Utils.
 Public Sub Initialize (bridge As PyBridge, vBuiltIn As PyObject, vImportLib As PyObject)
 	mBridge = bridge
-	ImportLib.Initialize(mBridge, vImportLib)
-	BuiltIns.Initialize(mBridge, vBuiltIn)
+	InternalImportLib.Initialize(mBridge, vImportLib)
+	Builtins.Initialize(mBridge, vBuiltIn)
 	Sys = ImportModule("sys")
-	EvalGlobals = BuiltIns.Run("dict", Null)
+	InternalEvalGlobals = Builtins.Run("dict", Null)
 	RegisteredMembers.Initialize
 End Sub
 
@@ -34,7 +35,7 @@ End Sub
 
 Private Sub RegisterMember (KeyName As String, ClassCode As String, Overwrite As Boolean)
 	If RegisteredMembers.Contains(KeyName) = False Or Overwrite Then
-		BuiltIns.Run("exec", Array(ClassCode, EvalGlobals, Null))
+		Builtins.Run("exec", Array(ClassCode, InternalEvalGlobals, Null))
 		RegisteredMembers.Add(KeyName)
 	End If
 End Sub
@@ -48,16 +49,48 @@ End Sub
 
 'Runs the provided Python code. It runs using the same global namespace as RunCode.
 Public Sub RunNoArgsCode (Code As String)
-	BuiltIns.Run("exec", Array(Code, EvalGlobals, Null))
+	Builtins.Run("exec", Array(Code, InternalEvalGlobals, Null))
+End Sub
+
+'Runs a single statement and returns the result (PyWrapper).
+'Example: <code>Py.Utils.RunStatement("10 * 15").Print</code>
+Public Sub RunStatement (Code As String) As PyWrapper
+	Return RunStatement2(Code, Null)
+End Sub
+'Runs a single statement and returns the result (PyWrapper). Allows passing a map with a set of "local" variables.
+'Example: <code>Py.Utils.RunStatement2($"locals()["x"] + 10"$, CreateMap("x": 20)).Print</code>
+Public Sub RunStatement2 (Code As String, Locals As Map) As PyWrapper
+	If IsNotInitialized(Locals) Then Locals = B4XCollections.GetEmptyMap
+	Return Builtins.Run ("eval", Array(Code, InternalEvalGlobals, Locals))
 End Sub
 
 'Returns a member or attribute that was previously added to the global namespace.
 Public Sub GetMember(Member As String) As PyWrapper
-	Return EvalGlobals.Run("__getitem__", Array(Member))
+	Return InternalEvalGlobals.Run("__getitem__", Array(Member))
 End Sub
 
 'Imports a module.
 Public Sub ImportModule (Module As String) As PyWrapper
-	Return ImportLib.Run("import_module", Array(Module))
+	Return InternalImportLib.Run("import_module", Array(Module))
+End Sub
+
+'Creates a slice object from Start (inclusive) to Stop (exclusive). Pass Null to omit a value.
+Public Sub Slice (Start As Object, Stop As Object) As PyWrapper
+	Return Slice2(Start, Stop, Null)
+End Sub
+
+'Same as Slice with an additional step value. Note that the value can be negative to traverse the collection backward.
+Public Sub Slice2 (Start As Object, Stop As Object, StepValue As Object) As PyWrapper
+	Return Builtins.Run("slice", Array(ConvertToIntIfMatch(Start), ConvertToIntIfMatch(Stop), ConvertToIntIfMatch(StepValue)))
+End Sub
+
+'Utility to prevent ints being treated as floats.
+Public Sub ConvertToIntIfMatch (o As Object) As Object
+	If o Is Float Or o Is Double Then
+		Dim d As Double = o
+		Dim i As Int = d
+		If Abs(d - i) < Epsilon Then Return i
+	End If
+	Return o
 End Sub
 

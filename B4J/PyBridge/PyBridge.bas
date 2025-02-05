@@ -23,7 +23,6 @@ Sub Class_Globals
 	Private CleanerClass As String
 	Public Utils As PyUtils
 	Private TaskIdCounter, PyObjectCounter As Int
-	Private EmptyList As List, EmptyMap As Map
 	Public Bridge As PyWrapper
 	Private CleanerIndex As Int
 	Private Shl As Shell
@@ -36,8 +35,6 @@ Public Sub Initialize (Callback As Object, EventName As String)
 	cleaner = cleaner.InitializeStatic("java.lang.ref.Cleaner").RunMethod("create", Null)
 	mCallback = Callback
 	mEventName = EventName
-	EmptyList.Initialize
-	EmptyMap.Initialize
 	CleanerClass = GetType(Me) & "$CleanRunnable"
 	mOptions.Initialize
 	
@@ -53,6 +50,11 @@ Public Sub Start (Options As PyOptions)
 		If File.Exists(Options.PyBridgePath, "") = False Or mOptions.ForceCopyBridgeSrc Then
 			File.Copy(File.DirAssets, "b4x_bridge.zip", Options.PyBridgePath, "")
 			PyLog(B4JPrefix, mOptions.B4JColor, "Python package copied to: " & Options.PyBridgePath)
+		End If
+		If File.Exists(Options.PythonExecutable, "") = False Then
+			LogError("Python executable not found!")
+			comm.CloseServer
+			Return
 		End If
 		Dim Shl As Shell
 		Shl.Initialize("shl", Options.PythonExecutable, Array As String("-u", "-m", "b4x_bridge", comm.Port, mOptions.WatchDogSeconds))
@@ -129,10 +131,10 @@ End Sub
 'Kills the Python process and closes the connection.
 Public Sub KillProcess
 	Try
-		If comm.IsInitialized Then
+		If IsNotInitialized(comm) = False Then
 			comm.CloseServer
 		End If
-		If mOptions.PythonExecutable <> "" And Shl.IsInitialized Then
+		If mOptions.PythonExecutable <> "" And IsNotInitialized(Shl) = False Then
 			Shl.KillProcess
 		End If
 	Catch
@@ -155,8 +157,8 @@ End Sub
 'Use PyWrapper.Run instead.
 Public Sub Run (Target As PyObject, Method As String, Args As List, KWArgs As Map) As PyObject
 	Dim res As PyObject = CreatePyObject(0)
-	If Args = Null Or Args.IsInitialized = False Then Args = EmptyList
-	If KWArgs = Null Or KWArgs.IsInitialized = False Then KWArgs = EmptyMap
+	If IsNotInitialized(Args) Then Args = B4XCollections.GetEmptyList
+	If IsNotInitialized(KWArgs) Then KWArgs = B4XCollections.GetEmptyMap
 	Dim TASK As PyTask = CreatePyTask(0, TASK_TYPE_RUN, _
 		Array(Target.Key, Method, Args, KWArgs, res.Key))
 	comm.SendTask(TASK)
@@ -175,8 +177,8 @@ End Sub
 'Use PyWrapper.RunAsync instead.
 Public Sub RunAsync(Target As PyObject, Method As String, Args As List, KWArgs As Map) As ResumableSub
 	Dim res As PyObject = CreatePyObject(0)
-	If Args = Null Or Args.IsInitialized = False Then Args = EmptyList
-	If KWArgs = Null Or KWArgs.IsInitialized = False Then KWArgs = EmptyMap
+	If IsNotInitialized(Args) Then Args = B4XCollections.GetEmptyList
+	If IsNotInitialized(KWArgs) Then KWArgs = B4XCollections.GetEmptyMap
 	Dim TASK As PyTask = CreatePyTask(0, TASK_TYPE_RUN_ASYNC, Array(Target.Key, Method, Args, KWArgs, res.Key))
 	comm.SendTaskAndWait(TASK)
 	Wait For (TASK) AsyncTask_Received (TASK As PyTask)

@@ -1,4 +1,4 @@
-Public Sub $MethodName$ As PyWrapper
+Private Sub $MethodName$ As PyWrapper
 	Dim Code As String = $"
 def $MethodName$ ():
     #python code here

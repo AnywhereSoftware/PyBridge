@@ -5,14 +5,14 @@ File2=Layout1.bjl
 FileGroup1=Default Group
 FileGroup2=Default Group
 Group=Default Group
-Library1=b4xcollections
-Library2=javaobject
-Library3=jcore
-Library4=jfx
-Library5=jnetwork
-Library6=jrandomaccessfile
-Library7=jshell
-Library8=jxui
+Library1=javaobject
+Library2=jcore
+Library3=jfx
+Library4=jnetwork
+Library5=jrandomaccessfile
+Library6=jshell
+Library7=jxui
+Library8=b4xcollections
 Module1=PyBridge
 Module2=PyComm
 Module3=PyUtils
@@ -69,19 +69,10 @@ Private Sub Start
 	opt.PyCacheFolder = "C:\Users\H\Downloads\projects"
 	Py.Start(opt)
 	Wait For Bridge_Connected (Success As Boolean)
-	If Success = False Then
-		Log("failed to connect")
-		Return
-	End If
-	Py.Utils.RunNoArgsCode($"
-import time
-n = time.time()
-import torch
-print(time.time() - n)
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(device)
-"$)
-	Py.Utils.RunNoArgsCode("print('aaa', device)")
+	Dim list As PyWrapper = Py.Utils.Builtins.Run("list", Array(Array(0, 1, 2, 3, 4, 5, 6)))
+	list.Print
+	list.Get(Py.Utils.Slice2(3, Null, -1)).Get(2).Print
+	
 End Sub
 
 

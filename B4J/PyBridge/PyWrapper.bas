@@ -34,7 +34,7 @@ Public Sub Run2 (Method As String, Args As List, KWArgs As Map) As PyWrapper
 End Sub
 
 Private Sub UnwrapList (Lst As List)
-	If Lst = Null Or Lst.IsInitialized = False Then Return
+	If IsNotInitialized(Lst) Then Return
 	For i = 0 To Lst.Size - 1
 		Dim v As Object = Lst.Get(i)
 		If v Is PyWrapper Then
@@ -69,7 +69,7 @@ Private Sub IsArray(obj As Object) As Boolean
 End Sub
 
 Private Sub UnwrapMap (Map As Map)
-	If Map = Null Or Map.IsInitialized = False Then Return
+	If IsNotInitialized(Map) Then Return
 	Dim KeysThatNeedToBeUnwrapped As List
 	KeysThatNeedToBeUnwrapped.Initialize
 	For Each key As Object In Map.Keys
@@ -99,7 +99,7 @@ End Sub
 
 'Returns a field (attribute) of this object. Note that its value is not fetched.
 Public Sub GetField (Field As String) As PyWrapper
-	Return mBridge.Utils.BuiltIns.Run("getattr", Array(mKey, Field))
+	Return mBridge.Utils.Builtins.Run("getattr", Array(mKey, Field))
 End Sub
 
 'Runs an async method.
@@ -156,6 +156,21 @@ Public Sub Print2 (Prefix As String, Suffix As String)
 	Else
 		mBridge.Utils.Print(Array(Prefix, Me, Suffix))
 	End If
+End Sub
+
+'Same as getting an item from a collection using square brackets.
+Public Sub Get (Key As Object) As PyWrapper
+	Return Run("__getitem__", Array(mBridge.Utils.ConvertToIntIfMatch(Key)))
+End Sub
+
+'Returns a string representation of this object.
+Public Sub Str As PyWrapper
+	Return mBridge.Utils.Builtins.Run("str", Array(Me))
+End Sub
+
+'Returns the type of this object.
+Public Sub TypeOf As PyWrapper
+	Return mBridge.Utils.Builtins.Run("type", Array(Me))
 End Sub
 
 #if java

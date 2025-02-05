@@ -1,4 +1,4 @@
-Public Sub $MethodName$ ($Arg1$ As Object, $Arg2$ As Object, $Arg3$ As Object) As PyWrapper
+Private Sub $MethodName$ ($Arg1$ As Object, $Arg2$ As Object, $Arg3$ As Object) As PyWrapper
 	Dim Code As String = $"
 def $MethodName$ ($Arg1$, $Arg2$, $Arg3$):
     #python code here
