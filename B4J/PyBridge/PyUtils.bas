@@ -34,7 +34,7 @@ def _print(obj):
 End Sub
 
 Private Sub RegisterMember (KeyName As String, ClassCode As String, Overwrite As Boolean)
-	If RegisteredMembers.Contains(KeyName) = False Or Overwrite Then
+	If KeyName = "" Or RegisteredMembers.Contains(KeyName) = False Or Overwrite Then
 		Builtins.Run("exec", Array(ClassCode, InternalEvalGlobals, Null))
 		RegisteredMembers.Add(KeyName)
 	End If
@@ -93,4 +93,23 @@ Public Sub ConvertToIntIfMatch (o As Object) As Object
 	End If
 	Return o
 End Sub
+
+'Fetches multiple objects and returns a list. Unserializable objects will be returned as a string.
+'Example: <code>Wait For (Py.Utils.FetchObjects(Array(x, y)) Complete (Fetched As List)</code>
+Public Sub FetchObjects (Objects As List) As ResumableSub
+	Dim list As PyWrapper = Builtins.Run("list", Array(Objects))
+	Wait For (ConvertUnserializable(list).Fetch) Complete (Result As PyWrapper)
+	Return Result.Value.As(List)
+End Sub
+
+Private Sub ConvertUnserializable (List As Object) As PyWrapper
+	Dim Code As String = $"
+def ConvertUnserializable (bridge, list1):
+	print(type(bridge))
+	l = map(lambda x: bridge.comm.serializator.is_serializable(x), list1)
+	return [x if y is None else str(y)[:100] for x, y in zip(list1, l)]
+"$
+	Return RunCode("ConvertUnserializable", Array(mBridge.Bridge, List), Code)
+End Sub
+
 

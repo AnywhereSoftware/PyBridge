@@ -158,7 +158,7 @@ Public Sub Print2 (Prefix As String, Suffix As String)
 	End If
 End Sub
 
-'Same as getting an item from a collection using square brackets.
+'Do not confuse with GetField! Calling Get is the same as getting an item from a collection using square brackets.
 Public Sub Get (Key As Object) As PyWrapper
 	Return Run("__getitem__", Array(mBridge.Utils.ConvertToIntIfMatch(Key)))
 End Sub
@@ -171,6 +171,11 @@ End Sub
 'Returns the type of this object.
 Public Sub TypeOf As PyWrapper
 	Return mBridge.Utils.Builtins.Run("type", Array(Me))
+End Sub
+
+'Return the length of an object (if it supports it).
+Public Sub Len As PyWrapper
+	Return mBridge.Utils.Builtins.Run("len", Array(Me))
 End Sub
 
 #if java

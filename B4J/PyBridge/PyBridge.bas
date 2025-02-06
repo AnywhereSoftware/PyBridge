@@ -15,7 +15,7 @@ Sub Class_Globals
 	Type InternalPyTaskAsyncResult (PyObject As PyObject, Value As Object, Error As Boolean)
 	Type PyOptions (PythonExecutable As String, LocalPort As Int, _
 		PyBridgePath As String, PyOutColor As Int, PyErrColor As Int, B4JColor As Int, _
-		ForceCopyBridgeSrc As Boolean, WatchDogSeconds As Int, PyCacheFolder As String)
+		ForceCopyBridgeSrc As Boolean, WatchDogSeconds As Int, PyCacheFolder As String, EnvironmentVars As Map)
 	Private cleaner As JavaObject
 	Private comm As PyComm
 	Private mCallback As Object
@@ -58,10 +58,9 @@ Public Sub Start (Options As PyOptions)
 		End If
 		Dim Shl As Shell
 		Shl.Initialize("shl", Options.PythonExecutable, Array As String("-u", "-m", "b4x_bridge", comm.Port, mOptions.WatchDogSeconds))
-		Dim env As Map = CreateMap("PYTHONPATH": Options.PyBridgePath, _
-			"PYTHONUTF8": 1)
-		If Options.PyCacheFolder <> "" Then env.Put("PYTHONPYCACHEPREFIX", Options.PyCacheFolder)
-		Shl.SetEnvironmentVariables(env)
+		Options.EnvironmentVars.Put("PYTHONPATH", Options.PyBridgePath)
+		If Options.PyCacheFolder <> "" Then Options.EnvironmentVars.Put("PYTHONPYCACHEPREFIX", Options.PyCacheFolder)
+		Shl.SetEnvironmentVariables(Options.EnvironmentVars)
 		Shl.RunWithOutputEvents(-1)
 	End If
 	
@@ -97,6 +96,8 @@ Public Sub CreateOptions (PythonExecutable As String) As PyOptions
 	opt.PyOutColor = 0xFF446EF7
 	opt.WatchDogSeconds = 30
 	opt.PyCacheFolder = File.DirData("pybridge")
+	opt.EnvironmentVars =  CreateMap("PYTHONUTF8": 1)
+	If DetectOS = "windows" Then opt.EnvironmentVars.Put("MPLCONFIGDIR", GetEnvironmentVariable("USERPROFILE", ""))
 	Return opt
 End Sub
 
@@ -210,7 +211,7 @@ Public Sub PyLog(Prefix As String, Clr As Int, O As Object)
 		Utils.Print(o)
 	Else
 		Dim s As String = o
-		s = s.Trim
+		s = s.Trim.Replace(Chr(13), "")
 		If s.Length = 0 Then Return
 		If Clr <> 0 Then
 			Main.PyLogHelper(Prefix & " " & s, Clr)
@@ -283,4 +284,15 @@ Private Sub CreateInternalPyTaskAsyncResult (PyObject As PyObject, Value As Obje
 	t1.Value = Value
 	t1.Error = Error
 	Return t1
+End Sub
+
+Private Sub DetectOS As String
+	Dim os As String = GetSystemProperty("os.name", "").ToLowerCase
+	If os.Contains("win") Then
+		Return "windows"
+	Else If os.Contains("mac") Then
+		Return "mac"
+	Else
+		Return "linux"
+	End If
 End Sub

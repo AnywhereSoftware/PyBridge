@@ -69,10 +69,10 @@ Private Sub Start
 	opt.PyCacheFolder = "C:\Users\H\Downloads\projects"
 	Py.Start(opt)
 	Wait For Bridge_Connected (Success As Boolean)
-	Dim list As PyWrapper = Py.Utils.Builtins.Run("list", Array(Array(0, 1, 2, 3, 4, 5, 6)))
-	list.Print
-	list.Get(Py.Utils.Slice2(3, Null, -1)).Get(2).Print
-	
+	Dim x As PyWrapper = Py.Utils.RunStatement(10)
+	Dim y As PyWrapper = Py.Utils.RunStatement(12)
+	Wait For (Py.Utils.FetchObjects(Array(x, y,Py.Bridge, 98.3))) Complete (Fetched As List)
+	Log(Fetched)	
 End Sub
 
 
