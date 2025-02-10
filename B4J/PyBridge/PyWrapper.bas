@@ -5,115 +5,84 @@ Type=Class
 Version=10
 @EndOfDesignText@
 Sub Class_Globals
-	Public mKey As PyObject
+	Public InternalKey As PyObject
 	Private mBridge As PyBridge
 	Private mFetched As Boolean
 	Private mError As Boolean
 	Private mValue As Object
+	Private LastArgs As InternalPyMethodArgs
 End Sub
 
 'Internal method.
 Public Sub Initialize (Bridge As PyBridge, Key As PyObject)
-	mKey = Key
+	InternalKey = Key
 	mBridge = Bridge
 End Sub
 
-'Runs a method with the list of arguments. Returns a PyWrapper with the unfetched result.
-Public Sub Run (Method As String, Args As List) As PyWrapper
-	Return Run2(Method, Args, Null)
+
+
+Public Sub Run(Method As String) As PyWrapper
+	Return RunArgs(Method, Null, Null)
 End Sub
 
-'Same as Run, with an additional map of arguments.
-Public Sub Run2 (Method As String, Args As List, KWArgs As Map) As PyWrapper
-	UnwrapList(Args)
-	UnwrapMap(KWArgs)
-	Dim py As PyObject = mBridge.run(mKey, Method, Args, KWArgs)
+Public Sub Args(Parameters As List) As PyWrapper
+	LastArgs.Args.AddAll(Parameters)
+	Return Me
+End Sub
+
+Public Sub Arg(Parameter As Object) As PyWrapper
+	LastArgs.Args.Add(Parameter)
+	Return Me
+End Sub
+
+Public Sub ArgNamed (Name As String, Parameter As Object) As PyWrapper
+	LastArgs.KWArgs.Put(Name, Parameter)
+	Return Me
+End Sub
+
+Public Sub ArgsNamed (Parameters As Map) As PyWrapper
+	For Each k As String In Parameters.Keys
+		LastArgs.KWArgs.Put(k, Parameters.Get(k))
+	Next
+	Return Me
+End Sub
+
+'Runs a method with the given positional and named arguments. Both can be Null.
+Public Sub RunArgs (Method As String, PositionalArgs As List, NamedArgs As Map) As PyWrapper
+	Dim a As InternalPyMethodArgs = PrepareArgs(PositionalArgs, NamedArgs)
+	Dim py As PyObject = mBridge.Utils.run(InternalKey, Method, a)
 	Dim w As PyWrapper
 	w.Initialize(mBridge, py)
+	w.LastArgs = a
 	Return w
 End Sub
 
-Private Sub UnwrapList (Lst As List)
-	If IsNotInitialized(Lst) Then Return
-	For i = 0 To Lst.Size - 1
-		Dim v As Object = Lst.Get(i)
-		If v Is PyWrapper Then
-			Lst.Set(i, v.As(PyWrapper).mKey)
-		Else If v Is List Then
-			UnwrapList(v)
-		Else If v Is Map Then
-			UnwrapMap(v)
-		Else If IsArray(v) Then
-			UnwrapTuple(v)
-		End If
-	Next
-End Sub
 
-Private Sub UnwrapTuple (Obj() As Object)
-	For i = 0 To Obj.Length - 1
-		Dim o As Object = Obj(i)
-		If o Is PyWrapper Then
-			Obj(i) = o.As(PyWrapper).mKey
-		Else If o Is List Then
-			UnwrapList(o)
-		Else If o Is Map Then
-			UnwrapMap(o)
-		Else If IsArray(o) Then
-			UnwrapTuple(o)
-		End If
-	Next
-End Sub
-
-Private Sub IsArray(obj As Object) As Boolean
-	Return obj <> Null And "[Ljava.lang.Object;" = GetType(obj)
-End Sub
-
-Private Sub UnwrapMap (Map As Map)
-	If IsNotInitialized(Map) Then Return
-	Dim KeysThatNeedToBeUnwrapped As List
-	KeysThatNeedToBeUnwrapped.Initialize
-	For Each key As Object In Map.Keys
-		Dim value As Object = Map.Get(key)
-		If value Is PyWrapper Then
-			KeysThatNeedToBeUnwrapped.Add(key)
-		Else If value Is List Then
-			UnwrapList(value)
-		Else If value Is Map Then
-			UnwrapMap(value)
-		Else If IsArray(value) Then
-			UnwrapTuple(value)
-		End If
-	Next
-	For Each key As Object In KeysThatNeedToBeUnwrapped
-		Dim value As Object = Map.Get(key)
-		Map.Put(key, value.As(PyWrapper).mKey)
-	Next
-End Sub
 
 'Fetches the value of a remote Python object. Avoid fetching values when possible. Fetching values requires waiting for the queue to be processed.
 '<code>Wait For (PyWrapper1.Fetch) Complete (Result As PyWrapper)</code>
 Public Sub Fetch As ResumableSub	
-	Wait For (mBridge.Fetch(mKey)) Complete (Result As InternalPyTaskAsyncResult)
+	Wait For (mBridge.Utils.Fetch(InternalKey)) Complete (Result As InternalPyTaskAsyncResult)
 	Return Wrap(Result)
 End Sub
 
 'Returns a field (attribute) of this object. Note that its value is not fetched.
 Public Sub GetField (Field As String) As PyWrapper
-	Return mBridge.Utils.Builtins.Run("getattr", Array(mKey, Field))
+	Return mBridge.Builtins.RunArgs("getattr", Array(InternalKey, Field), Null)
 End Sub
 
-'Runs an async method.
-'<code>Wait For (PyWrapper1.RunAsync ("MethodName", Array("arg1")) Complete (Result As PyWrapper)</code>
-Public Sub RunAsync (Method As String, Args As List) As ResumableSub
-	UnwrapList(Args)
-	Wait For (mBridge.RunAsync(mKey, Method, Args, Null)) Complete (Result As InternalPyTaskAsyncResult)
-	Return Wrap(Result)
+Private Sub PrepareArgs (Args1 As List, KWArgs As Map) As InternalPyMethodArgs
+	Dim a As InternalPyMethodArgs
+	a.Initialize
+	a.Args = B4XCollections.CreateList(Args1)
+	a.KWArgs = B4XCollections.MergeMaps(KWArgs, Null)
+	Return a
 End Sub
-'Similar to RunAsync with an additional map of arguments.
-Public Sub RunAsync2 (Method As String, Args As List, KWArgs As Map) As ResumableSub
-	UnwrapList(Args)
-	UnwrapMap(KWArgs)
-	Wait For (mBridge.RunAsync(mKey, Method, Args, KWArgs)) Complete (Result As InternalPyTaskAsyncResult)
+'Runs an async method.
+'<code>Wait For (PyWrapper1.RunAsync("MethodName", Array("arg1"), Null) Complete (Result As PyWrapper)</code>
+Public Sub RunAsync (Method As String, PositionalArgs As List, NamedArgs As Map) As ResumableSub
+	Dim a As InternalPyMethodArgs = PrepareArgs(PositionalArgs, NamedArgs)
+	Wait For (mBridge.Utils.RunAsync(InternalKey, Method, a)) Complete (Result As InternalPyTaskAsyncResult)
 	Return Wrap(Result)
 End Sub
 
@@ -146,37 +115,133 @@ End Sub
 
 'Remotely prints the object.
 Public Sub Print
-	Print2("", "")
+	Print2("", "", False)
+End Sub
+
+Public Sub PrintError
+	Print2("", "", True)
 End Sub
 
 'Similar to Print with an additional prefix and suffix strings, separated by spaces.
-Public Sub Print2 (Prefix As String, Suffix As String)
+Public Sub Print2 (Prefix As String, Suffix As String, StdErr As Boolean)
 	If mFetched Then
 		Log(mValue)
 	Else
-		mBridge.Utils.Print(Array(Prefix, Me, Suffix))
+		mBridge.Print(Array(Prefix, Me, Suffix), StdErr)
 	End If
 End Sub
 
-'Do not confuse with GetField! Calling Get is the same as getting an item from a collection using square brackets.
-Public Sub Get (Key As Object) As PyWrapper
-	Return Run("__getitem__", Array(mBridge.Utils.ConvertToIntIfMatch(Key)))
+'Same as getting an item from a collection using square brackets.
+'Do not confuse with GetField which returns an attribute of this object.
+Public Sub GetItem (Key As Object) As PyWrapper
+	Return Run("__getitem__").Arg(mBridge.ConvertToIntIfMatch(Key))
+End Sub
+
+'Same as setting an item in a collection using square brackets.
+Public Sub SetItem(Key As Object, Value As Object)
+	Run("__setitem__").Arg(mBridge.ConvertToIntIfMatch(Key)).Arg(Value)
+End Sub
+
+'Same as deleting an item using the del keyword.
+Public Sub DelItem(Key As Object, Value As Object) 
+	Run("__detitem__").Arg(mBridge.ConvertToIntIfMatch(Key)).Arg(Value)
+End Sub
+
+'Tests whether the collection contains the item.
+Public Sub Contains(Item As Object) As PyWrapper
+	Return Run("__contains__").Arg(mBridge.ConvertToIntIfMatch(Item))
 End Sub
 
 'Returns a string representation of this object.
 Public Sub Str As PyWrapper
-	Return mBridge.Utils.Builtins.Run("str", Array(Me))
+	Return mBridge.Builtins.Run("str").Arg(InternalKey)
 End Sub
 
 'Returns the type of this object.
 Public Sub TypeOf As PyWrapper
-	Return mBridge.Utils.Builtins.Run("type", Array(Me))
+	Return mBridge.Builtins.Run("type").Arg(InternalKey)
 End Sub
 
 'Return the length of an object (if it supports it).
 Public Sub Len As PyWrapper
-	Return mBridge.Utils.Builtins.Run("len", Array(Me))
+	Return mBridge.Builtins.Run("len").Arg(InternalKey)
 End Sub
+
+'Returns the shape attribute (if it exists).
+Public Sub Shape As PyWrapper
+	Return GetField("shape")
+End Sub
+
+'Addition operator (+).
+Public Sub OperAdd (Other As Object) As PyWrapper
+	Return Run("__add__").Arg(Other)
+End Sub
+
+'Subtract operator (-).
+Public Sub OperSub (Other As Object) As PyWrapper
+	Return Run("__sub__").Arg(Other)
+End Sub
+
+'Multiply operator (*).
+Public Sub OperMul (Other As Object) As PyWrapper
+	Return Run("__mul__").Arg(Other)
+End Sub
+
+'Modulo operator (%).
+Public Sub OperMod (Other As Object) As PyWrapper
+	Return Run("__mod__").Arg(Other)
+End Sub
+
+'Power operator (**).
+Public Sub OperPow (Other As Object) As PyWrapper
+	Return Run("__pow__").Arg(Other)
+End Sub
+
+'Casts number to float.
+Public Sub AsFloat As PyWrapper
+	Return mBridge.Builtins.Run("float").Arg(InternalKey)
+End Sub
+
+'Casts number to int.
+Public Sub AsInt As PyWrapper
+	Return mBridge.Builtins.Run("int").Arg(Me)
+End Sub
+
+'Equal operator.
+Public Sub OprEqual (Other As Object) As PyWrapper
+	Return Run("__eq__").Arg(Other)
+End Sub
+'Not equal operator.
+Public Sub OprNotEqual (Other As Object) As PyWrapper
+	Return Run("__ne__").Arg(Other)
+End Sub
+'Less than operator.
+Public Sub OprLess (Other As Object) As PyWrapper
+	Return Run("__lt__").Arg(Other)
+End Sub
+'Less than or equal to operator.
+Public Sub OprLessEqual (Other As Object) As PyWrapper
+	Return Run("__le__").Arg(Other)
+End Sub
+'Greater than operator.
+Public Sub OprGreater (Other As Object) As PyWrapper
+	Return Run("__gt__").Arg(Other)
+End Sub
+
+'Greater than or equal to.
+Public Sub OprGreaterEqual (Other As Object) As PyWrapper
+	Return Run("__ge__").Arg(Other)
+End Sub
+
+'Non short circuit and operator (&).
+Public Sub OprAnd (Other As Object) As PyWrapper
+	Return Run("__and__").Arg(Other)
+End Sub
+'Non short circuit or opertaor (|).
+Public Sub OprOr (Other As Object) As PyWrapper
+	Return Run("__or__").Arg(Other)
+End Sub
+
 
 #if java
 public void raiseError(String desc) {

@@ -5,7 +5,6 @@ import sys
 from dataclasses import dataclass
 from enum import IntEnum
 from typing import Tuple, List, Optional
-
 from b4x_bridge.b4x_serializator import B4XSerializator
 
 
@@ -46,6 +45,8 @@ class Task:
             value = f"Unserializable object ({problematic_type.__name__})"
         return Task(id=_id, task_type=task_type, extra=[value])
 
+
+
 class B4XBridge:
     def __init__(self, port:int, watchdog:int):
         self.memory:dict[int, object] = {
@@ -55,7 +56,7 @@ class B4XBridge:
         }
         from .comm_manager import CommManager
         self.comm = CommManager(self, port)
-        self.version = "0.11"
+        self.version = "0.12"
         self.max_time_until_pong = watchdog
 
     def register_dataclass(self, cls):
@@ -64,46 +65,48 @@ class B4XBridge:
     async def start(self):
         await self.comm.connect()
 
-    def unwrap_list(self, _list: List):
+    def unwrap_list(self, _list: List, copy: bool) -> list:
+        if copy:
+            _list = list(_list)
         for i in range(len(_list)):
             obj = _list[i]
             if isinstance(obj, PyObject):
                 _list[i] = self.memory[obj.Key]
             elif isinstance(obj, dict):
-                self.unwrap_dict(obj)
+                _list[i] = self.unwrap_dict(obj, copy)
             elif isinstance(obj, list):
-                self.unwrap_list(obj)
+                _list[i] = self.unwrap_list(obj, copy)
             elif isinstance(obj, tuple):
                 _list[i] = self.unwrap_tuple(obj)
+        return _list
 
-    def unwrap_dict(self, _dict: dict):
-        keys_that_are_unwrapped = []
+
+    def unwrap_dict(self, _dict: dict, copy: bool) -> dict:
+        if copy:
+            _dict = dict(_dict)
         for k, v in _dict.items():
             if isinstance(v, PyObject):
-                keys_that_are_unwrapped.append(k)
-            elif isinstance(v, dict):
-                self.unwrap_dict(v)
-            elif isinstance(v, list):
-                self.unwrap_list(v)
-            elif isinstance(v, tuple):
-                keys_that_are_unwrapped.append(k)
-        for k in keys_that_are_unwrapped:
-            v = _dict[k]
-            if isinstance(v, PyObject):
                 _dict[k] = self.memory[v.Key]
-            if isinstance(v, tuple):
+            elif isinstance(v, dict):
+                _dict[k] = self.unwrap_dict(v, copy)
+            elif isinstance(v, list):
+                _dict[k] = self.unwrap_list(v, copy)
+            elif isinstance(v, tuple):
                 _dict[k] = self.unwrap_tuple(v)
+        return _dict
+
+
 
     def unwrap_tuple(self, _tuple: tuple) -> tuple:
         _list = list(_tuple)
-        self.unwrap_list(_list)
+        self.unwrap_list(_list, copy=False)
         return tuple(_list)
 
-    def run(self, task: Task) -> Tuple[bool, Optional[Exception]]:
+    def run(self, task: Task, copy_args: bool) -> Tuple[bool, Optional[Exception]]:
         target, method_name, args, kwargs, store_target = task.extra
         target = self.memory[target]
-        self.unwrap_list(args)
-        self.unwrap_dict(kwargs)
+        args = self.unwrap_list(args, copy_args)
+        kwargs = self.unwrap_dict(kwargs, copy_args)
         try:
             method = getattr(target, method_name)
             res = method(*args, **kwargs)
@@ -116,8 +119,8 @@ class B4XBridge:
 
     async def run_async(self, task: Task, error: Optional[Exception]):
         target, method_name, args, kwargs, store_target = task.extra
-        self.unwrap_list(args)
-        self.unwrap_dict(kwargs)
+        self.unwrap_list(args, False)
+        self.unwrap_dict(kwargs, False)
         if error is not None:
             res = error
         else:
@@ -132,7 +135,7 @@ class B4XBridge:
 
     def raise_event(self, event_name: str, params: dict):
         if params:
-            self.unwrap_dict(params)
+            self.unwrap_dict(params, False)
         task = Task(0, TaskType.EVENT, [event_name, params])
         self.comm.write_queue.put_nowait(task)
 
@@ -157,23 +160,27 @@ class B4XBridge:
     async def wait_for_incoming(self):
         while True:
             tasks: List[Task] = await self.comm.read_queue.get()
-            state_good = True
-            e: Optional[Exception] = None
-            for task in tasks:
-                # print(task)
-                if task.task_type == TaskType.RUN:
-                    if not state_good:
-                        self.memory[task.get_store_key()] = e
-                    else:
-                        state_good, e = self.run(task)
-                elif task.task_type == TaskType.GET:
-                    self.get_pyobject(task, e)
-                elif task.task_type == TaskType.RUN_ASYNC:
-                    asyncio.create_task(self.run_async(task, e))
-                elif task.task_type == TaskType.CLEAN:
-                    self.clean(task)
-                elif task.task_type == TaskType.FLUSH:
-                    self.comm.write_queue.put_nowait(task)
+            self.run_tasks(tasks, False)
+
+    def run_tasks(self, tasks: List[Task], copy_args: bool):
+        state_good = True
+        e: Optional[Exception] = None
+        for task in tasks:
+            # print(task)
+            if task.task_type == TaskType.RUN:
+                if not state_good:
+                    self.memory[task.get_store_key()] = e
+                else:
+                    state_good, e = self.run(task, copy_args=copy_args)
+            elif task.task_type == TaskType.GET:
+                self.get_pyobject(task, e)
+            elif task.task_type == TaskType.RUN_ASYNC:
+                asyncio.create_task(self.run_async(task, e))
+            elif task.task_type == TaskType.CLEAN:
+                self.clean(task)
+            elif task.task_type == TaskType.FLUSH:
+                self.comm.write_queue.put_nowait(task)
+
 
     def kill(self):
         sys.exit()
@@ -185,7 +192,7 @@ def task_done_callback(task: asyncio.Task):
         print(f"Unhandled exception in task: {repr(e)}", file=sys.stderr)
         sys.exit()
 
-def exception_handler(loop, context):
+def exception_handler(_, context):
     print(context, file=sys.stderr)
 
 async def main():

@@ -1,7 +1,5 @@
 import asyncio
-import random
 import sys
-import time
 from asyncio import Queue, StreamReader, StreamWriter
 from typing import List
 
@@ -28,7 +26,6 @@ class CommManager:
         asyncio.create_task(self.heartbeat()).add_done_callback(task_done_callback)
 
     async def heartbeat(self):
-        r = random.Random().randint(1, 10000)
         while True:
             await asyncio.sleep(1)
             if self.bridge.max_time_until_pong > 0:

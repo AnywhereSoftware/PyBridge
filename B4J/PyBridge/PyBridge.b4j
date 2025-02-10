@@ -41,8 +41,8 @@ End Sub
 Sub AppStart (Form1 As Form, Args() As String)
 	MainForm = Form1
 	MainForm.RootPane.LoadLayout("Layout1")
-	MainForm.Show
-	Py.Initialize(Me, "Bridge")
+'	MainForm.Show
+	Py.Initialize(Me, "Py")
 	Start
 End Sub
 
@@ -68,26 +68,44 @@ Private Sub Start
 '	opt.ForceCopyBridgeSrc = True
 	opt.PyCacheFolder = "C:\Users\H\Downloads\projects"
 	Py.Start(opt)
-	Wait For Bridge_Connected (Success As Boolean)
-	Dim x As PyWrapper = Py.Utils.RunStatement(10)
-	Dim y As PyWrapper = Py.Utils.RunStatement(12)
-	Wait For (Py.Utils.FetchObjects(Array(x, y,Py.Bridge, 98.3))) Complete (Fetched As List)
-	Log(Fetched)	
+	Wait For Py_Connected (Success As Boolean)
+	
+	PrintPythonVersion
+	Dim sum As PyWrapper = ExampleOfPythonMethod(10, 20)
+	sum.Print
+	Py.WrapObject(10).OperAdd(20).Print2("Value is:", "", False)
+	Wait For (Py.Flush) Complete (u As Boolean)
+	'this also works:
+	sum = ExampleOfPythonMethod(sum, 15)
+	sum.PrintError
+	'And if we want to get the value:
+	Wait For (sum.Fetch) Complete (sum As PyWrapper)
+	Dim z As Int = sum.Value
+	Log("ttt: "  & z)
+End Sub
+
+Private Sub B4XPage_Background
+	Py.KillProcess
+End Sub
+
+Private Sub PrintPythonVersion
+	Py.ImportModule("sys").GetField("version").Print2("Python version:", "", False)
+End Sub
+
+'Tip: start typing Py and use the Py macros to create such methods:
+Private Sub ExampleOfPythonMethod (X As Object, Y As Object) As PyWrapper
+	Dim Code As String = $"
+def ExampleOfPythonMethod (X, Y):
+    #python code here
+	return X + Y
+"$
+	Return Py.RunCode("ExampleOfPythonMethod", Array(X, Y), Code)
 End Sub
 
 
-'Workaround for LogColor not working from b4xlib libraries.
-Public Sub PyLogHelper (Text As String, Clr As Int)
-	LogColor(Text, Clr)
-End Sub
-
-
-Private Sub Bridge_Event (Name As String, Params As Map)
+Private Sub Py_Event (Name As String, Params As Map)
 	Dim key As Int = Params.Get("key1")
 	Dim o As PyObject
 	o.Key = key
-	Dim w As PyWrapper
-	w.Initialize(Py, o)
-	Py.Utils.Print(Array(w))
 End Sub
 

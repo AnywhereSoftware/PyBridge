@@ -5,5 +5,5 @@ def $MethodName$ ($Arg1$, $Arg2$, $Arg3$):
 	$end$
 	return $Arg1$ + $Arg2$ + $Arg3$
 "$
-	Return Py.Utils.RunCode("$MethodName$", Array($Arg1$, $Arg2$, $Arg3$), Code)
+	Return Py.RunCode("$MethodName$", Array($Arg1$, $Arg2$, $Arg3$), Code)
 End Sub

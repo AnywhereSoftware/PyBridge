@@ -191,6 +191,7 @@ class B4XSerializator:
         map1 = self._read_map()
         map1 = {k[1:] if k.startswith("_") else k: v for k, v in map1.items()}
         typ = self._fix_cls_name(cls)
+        # noinspection PyUnresolvedReferences
         fields = typ.__dataclass_fields__.keys()
         map1 = {k: v for k, v in map1.items() if k in fields}
         obj = typ(**map1)

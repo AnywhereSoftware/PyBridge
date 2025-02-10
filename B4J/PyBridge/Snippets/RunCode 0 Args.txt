@@ -5,5 +5,5 @@ def $MethodName$ ():
 	$end$
 	return 0.12345
 "$
-	Return Py.Utils.RunCode("$MethodName$", Array(), Code)
+	Return Py.RunCode("$MethodName$", Array(), Code)
 End Sub

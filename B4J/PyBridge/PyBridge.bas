@@ -9,35 +9,33 @@ Version=10
 #Event: Event (Name As String, Params As Map)
 Sub Class_Globals
 	Type PyObject (Key As Int)
-	Private TASK_TYPE_RUN = 1, TASK_TYPE_GET = 2, TASK_TYPE_RUN_ASYNC = 3, TASK_TYPE_CLEAN = 4 _
-		, TASK_TYPE_ERROR = 5, TASK_TYPE_EVENT = 6, TASK_TYPE_PING = 7, TASK_TYPE_FLUSH = 8 As Int
 	Type PyTask (TaskId As Int, TaskType As Int, Extra As List)
 	Type InternalPyTaskAsyncResult (PyObject As PyObject, Value As Object, Error As Boolean)
 	Type PyOptions (PythonExecutable As String, LocalPort As Int, _
 		PyBridgePath As String, PyOutColor As Int, PyErrColor As Int, B4JColor As Int, _
 		ForceCopyBridgeSrc As Boolean, WatchDogSeconds As Int, PyCacheFolder As String, EnvironmentVars As Map)
-	Private cleaner As JavaObject
+	Type InternalPyMethodArgs (Args As List, KWArgs As Map)
 	Private comm As PyComm
 	Private mCallback As Object
 	Private mEventName As String
-	Private CleanerClass As String
+	
 	Public Utils As PyUtils
-	Private TaskIdCounter, PyObjectCounter As Int
+	Public Builtins As PyWrapper
 	Public Bridge As PyWrapper
-	Private CleanerIndex As Int
+	Public Sys As PyWrapper
+	
 	Private Shl As Shell
-	Public mOptions As PyOptions
-	Public PythonBridgeCodeVersion As String = "0.11"
-	Public PyOutPrefix = "(pyout)", PyErrPrefix = "(pyerr)", B4JPrefix = "(b4j)" As String
+	Private mOptions As PyOptions
+	Private Epsilon As Double = 0.0000001
+	Private ShlReadLoopIndex As Int
+	Public Const CALL_METHOD As String = "__call__"
 End Sub
 
 Public Sub Initialize (Callback As Object, EventName As String)
-	cleaner = cleaner.InitializeStatic("java.lang.ref.Cleaner").RunMethod("create", Null)
 	mCallback = Callback
 	mEventName = EventName
-	CleanerClass = GetType(Me) & "$CleanRunnable"
 	mOptions.Initialize
-	
+	Utils.Initialize(Me, comm)
 End Sub
 
 'Starts the Python bridge server. Use Py.CreateOptions to create the Options object. 
@@ -45,39 +43,45 @@ Public Sub Start (Options As PyOptions)
 	KillProcess
 	mOptions = Options
 	comm.Initialize(Me, Options.LocalPort)
-	PyObjectCounter = 100
+	Utils.Comm = comm
 	If Options.PythonExecutable <> "" Then
 		If File.Exists(Options.PyBridgePath, "") = False Or mOptions.ForceCopyBridgeSrc Then
 			File.Copy(File.DirAssets, "b4x_bridge.zip", Options.PyBridgePath, "")
-			PyLog(B4JPrefix, mOptions.B4JColor, "Python package copied to: " & Options.PyBridgePath)
+			Utils.PyLog(Utils.B4JPrefix, mOptions.B4JColor, "Python package copied to: " & Options.PyBridgePath)
 		End If
 		If File.Exists(Options.PythonExecutable, "") = False Then
 			LogError("Python executable not found!")
 			comm.CloseServer
-			Return
 		End If
 		Dim Shl As Shell
 		Shl.Initialize("shl", Options.PythonExecutable, Array As String("-u", "-m", "b4x_bridge", comm.Port, mOptions.WatchDogSeconds))
 		Options.EnvironmentVars.Put("PYTHONPATH", Options.PyBridgePath)
 		If Options.PyCacheFolder <> "" Then Options.EnvironmentVars.Put("PYTHONPYCACHEPREFIX", Options.PyCacheFolder)
 		Shl.SetEnvironmentVariables(Options.EnvironmentVars)
-		Shl.RunWithOutputEvents(-1)
-	End If
-	
-End Sub
-
-Private Sub Shl_StdOut (Buffer() As Byte, Length As Int)
-	PyLog(PyOutPrefix, mOptions.PyOutColor, BytesToString(Buffer, 0, Length, "utf8"))
-End Sub
-
-Private Sub Shl_StdErr (Buffer() As Byte, Length As Int)
-	If comm.State = comm.STATE_CONNECTED Then
-		PyLog(PyErrPrefix, mOptions.PyErrColor, BytesToString(Buffer, 0, Length, "utf8"))
+		Shl.Run(-1)
+		ShlReadLoop
 	End If
 End Sub
+
+Private Sub ShlReadLoop
+	ShlReadLoopIndex = ShlReadLoopIndex + 1
+	Dim MyIndex As Int = ShlReadLoopIndex
+	Do While MyIndex = ShlReadLoopIndex And Initialized(Shl)
+		HandleOutAndErr(Shl.GetTempOut2(True), Shl.GetTempErr2(True))
+		Sleep(50)
+	Loop
+End Sub
+
+Private Sub HandleOutAndErr (out As String, err As String)
+	If out.Length > 0 Then Utils.PyLog(Utils.PyOutPrefix, mOptions.PyOutColor, out)
+	If err.Length > 0 Then Utils.PyLog(Utils.PyErrPrefix, mOptions.PyErrColor, err)
+End Sub
+
+
 
 Private Sub shl_ProcessCompleted (Success As Boolean, ExitCode As Int, StdOut As String, StdErr As String)
-	PyLog(B4JPrefix, mOptions.B4JColor, $"Process completed. ExitCode: ${ExitCode}"$)
+	HandleOutAndErr(StdOut, StdErr)	
+	Utils.PyLog(Utils.B4JPrefix, mOptions.B4JColor, $"Process completed. ExitCode: ${ExitCode}"$)
 	Dim Shl As Shell
 	comm.CloseServer
 End Sub
@@ -90,36 +94,22 @@ Public Sub CreateOptions (PythonExecutable As String) As PyOptions
 	Dim opt As PyOptions
 	opt.Initialize
 	opt.PythonExecutable = PythonExecutable
-	opt.PyBridgePath = File.Combine(File.DirData("pybridge"), $"b4x_bridge_${PythonBridgeCodeVersion}.zip"$)
+	opt.PyBridgePath = File.Combine(File.DirData("pybridge"), $"b4x_bridge_${Utils.PythonBridgeCodeVersion}.zip"$)
 	opt.B4JColor = 0xFF727272
 	opt.PyErrColor = 0xFFF74479
 	opt.PyOutColor = 0xFF446EF7
 	opt.WatchDogSeconds = 30
 	opt.PyCacheFolder = File.DirData("pybridge")
 	opt.EnvironmentVars =  CreateMap("PYTHONUTF8": 1)
-	If DetectOS = "windows" Then opt.EnvironmentVars.Put("MPLCONFIGDIR", GetEnvironmentVariable("USERPROFILE", ""))
+	If Utils.DetectOS = "windows" Then opt.EnvironmentVars.Put("MPLCONFIGDIR", GetEnvironmentVariable("USERPROFILE", ""))
 	Return opt
-End Sub
-
-Private Sub CreatePyObject (Key As Int) As PyObject
-	Dim t1 As PyObject
-	t1.Initialize
-	If Key = 0 Then
-		PyObjectCounter = PyObjectCounter + 1
-		Key = PyObjectCounter
-	End If
-	t1.Key = Key
-	RegisterForCleaning(t1)
-	Return t1
 End Sub
 
 Private Sub State_Changed (OldState As Int, NewState As Int)
 	If NewState = comm.STATE_CONNECTED Then
-		Bridge.Initialize(Me, CreatePyObject(1))
-		Utils.Initialize(Me, CreatePyObject(3), CreatePyObject(2))
-		CheckKeysNeedToBeCleaned
+		AfterConnection
 	Else
-		CleanerIndex = CleanerIndex + 1
+		Utils.Disconnected
 		KillProcess
 	End If
 	If NewState = comm.STATE_CONNECTED Or (OldState = comm.STATE_WAITING_FOR_CONNECTION And NewState = comm.STATE_DISCONNECTED) Then
@@ -129,24 +119,25 @@ Private Sub State_Changed (OldState As Int, NewState As Int)
 	End If
 End Sub
 
-'Kills the Python process and closes the connection.
-Public Sub KillProcess
-	Try
-		If IsNotInitialized(comm) = False Then
-			comm.CloseServer
-		End If
-		If mOptions.PythonExecutable <> "" And IsNotInitialized(Shl) = False Then
-			Shl.KillProcess
-		End If
-	Catch
-		Log(LastException)
-	End Try
+Private Sub AfterConnection
+	Bridge.Initialize(Me, Utils.CreatePyObject(1))
+	Builtins.Initialize(Me, Utils.CreatePyObject(3))
+	Utils.Connected(Utils.CreatePyObject(2), mOptions)
+	Sys = ImportModule("sys")
+	RunNoArgsCode("import sys")
+End Sub
+
+'Flushes the output queue. Can be used with Wait For to wait for the Python process to complete executing the queue.
+'<code>Wait For (py.Flush) Complete (Unused As Boolean)</code>
+Public Sub Flush As ResumableSub
+	Wait For (Utils.Flush) Complete (unused As Boolean)
+	Return unused
 End Sub
 
 Private Sub Task_Received(TASK As PyTask)
-	If TASK.TaskType = TASK_TYPE_PING Then
-		comm.SendTask(CreatePyTask(0, TASK_TYPE_PING, Array()))
-	Else If TASK.TaskType <> TASK_TYPE_EVENT Then
+	If TASK.TaskType = Utils.TASK_TYPE_PING Then
+		comm.SendTask(Utils.CreatePyTask(0, Utils.TASK_TYPE_PING, Array()))
+	Else If TASK.TaskType <> Utils.TASK_TYPE_EVENT Then
 		LogError("Unexpected message: " & TASK)
 	Else
 		Dim EventName As String = TASK.Extra.Get(0)
@@ -155,144 +146,122 @@ Private Sub Task_Received(TASK As PyTask)
 	End If
 End Sub
 
-'Use PyWrapper.Run instead.
-Public Sub Run (Target As PyObject, Method As String, Args As List, KWArgs As Map) As PyObject
-	Dim res As PyObject = CreatePyObject(0)
-	If IsNotInitialized(Args) Then Args = B4XCollections.GetEmptyList
-	If IsNotInitialized(KWArgs) Then KWArgs = B4XCollections.GetEmptyMap
-	Dim TASK As PyTask = CreatePyTask(0, TASK_TYPE_RUN, _
-		Array(Target.Key, Method, Args, KWArgs, res.Key))
-	comm.SendTask(TASK)
-	Return res
-End Sub
-
-'Flushes the output queue. Can be used with Wait For to wait for the Python process to complete executing the queue.
-'<code>Wait For (py.Flush) Complete (Unused As Boolean)</code>
-Public Sub Flush As ResumableSub
-	Dim task As PyTask = CreatePyTask(0, TASK_TYPE_FLUSH, Array())
-	comm.SendTaskAndWait(task)
-	Wait For (task) AsyncTask_Received (task As PyTask)
-	Return True
-End Sub
-
-'Use PyWrapper.RunAsync instead.
-Public Sub RunAsync(Target As PyObject, Method As String, Args As List, KWArgs As Map) As ResumableSub
-	Dim res As PyObject = CreatePyObject(0)
-	If IsNotInitialized(Args) Then Args = B4XCollections.GetEmptyList
-	If IsNotInitialized(KWArgs) Then KWArgs = B4XCollections.GetEmptyMap
-	Dim TASK As PyTask = CreatePyTask(0, TASK_TYPE_RUN_ASYNC, Array(Target.Key, Method, Args, KWArgs, res.Key))
-	comm.SendTaskAndWait(TASK)
-	Wait For (TASK) AsyncTask_Received (TASK As PyTask)
-	Return CheckForErrorsAndReturn(TASK, res)
-End Sub
-
-Private Sub CheckForErrorsAndReturn (TASK As PyTask, PyObject As PyObject) As InternalPyTaskAsyncResult
-	If TASK.TaskType = TASK_TYPE_ERROR Then
-		PyLog(B4JPrefix, mOptions.PyErrColor, TASK.Extra.Get(0))
-	End If
-	Return CreateInternalPyTaskAsyncResult(PyObject, TASK.Extra.Get(0), TASK.TaskType == TASK_TYPE_ERROR)
-End Sub
-
-'Use PyWrapper.Fetch instead.
-Public Sub Fetch(PyObject As PyObject) As ResumableSub
-	Dim TASK As PyTask = CreatePyTask(0, TASK_TYPE_GET, Array(PyObject.Key))
-	comm.SendTaskAndWait(TASK)
-	Wait For (TASK) AsyncTask_Received (TASK As PyTask)
-	Return CheckForErrorsAndReturn(TASK, PyObject)
-End Sub
-
-'Used internally. Note that it expects a sub in the Main module with the following code:
-'<code>Public Sub PyLogHelper (Text As String, Clr As Int)
-' LogColor (Text, Clr)
-'End Sub</code>
-Public Sub PyLog(Prefix As String, Clr As Int, O As Object)
-	#if not(DISABLE_PYBRIDGE_LOGS)
-	If o Is PyWrapper Then
-		Utils.Print(o)
-	Else
-		Dim s As String = o
-		s = s.Trim.Replace(Chr(13), "")
-		If s.Length = 0 Then Return
-		If Clr <> 0 Then
-			Main.PyLogHelper(Prefix & " " & s, Clr)
-		Else
-			Log(Prefix & " " & s.Trim)
+'Kills the Python process and closes the connection.
+Public Sub KillProcess
+	Try
+		ShlReadLoopIndex = ShlReadLoopIndex + 1
+		If Initialized(comm) Then
+			comm.CloseServer
 		End If
-	End If
-	#End If
-End Sub
-
-'Internal method
-Public Sub CreatePyTask (TaskId As Int, TaskType As Int, Extra As List) As PyTask
-	Dim t1 As PyTask
-	t1.Initialize
-	If TaskId = 0 Then
-		TaskIdCounter = TaskIdCounter + 1
-		TaskId = TaskIdCounter
-	End If
-	t1.TaskId = TaskId
-	t1.TaskType = TaskType
-	t1.Extra = Extra
-	Return t1
-End Sub
-
-Private Sub RegisterForCleaning (Py As PyObject)
-	Dim Runnable As JavaObject
-	Runnable.InitializeNewInstance(CleanerClass, Array(Py.Key))
-	cleaner.RunMethod("register", Array(Py, Runnable))
-End Sub
-
-Private Sub CheckKeysNeedToBeCleaned
-	CleanerIndex = CleanerIndex + 1
-	Dim MyIndex As Int = CleanerIndex
-	Do While MyIndex = CleanerIndex
-		Sleep(1000)
-		Dim c As JavaObject
-		Dim keys As List = c.InitializeStatic(CleanerClass).RunMethod("getKeys", Null)
-		If keys.Size > 0 Then
-			comm.SendTask(CreatePyTask(0, TASK_TYPE_CLEAN, keys))
+		If mOptions.PythonExecutable <> "" And Initialized(Shl) Then
+			Shl.KillProcess
 		End If
-	Loop
+	Catch
+		Log(LastException)
+	End Try
 End Sub
 
-
-#if Java
-public static class CleanRunnable implements Runnable {
-	private final int key;
-	private final static java.util.List<Object> listOfKeys = java.util.Collections.synchronizedList(new java.util.ArrayList<Object>());
-	public CleanRunnable(int key) {
-		this.key = key;
-	}
-	public void run() {
-		listOfKeys.add(key);
-	}
-	public static java.util.List<Object> getKeys() {
-		synchronized(listOfKeys) {
-			java.util.ArrayList<Object> res = new java.util.ArrayList<Object>(listOfKeys);
-			listOfKeys.clear();
-			return res;
-		}
-	}
-}
-
-#End If
-
-Private Sub CreateInternalPyTaskAsyncResult (PyObject As PyObject, Value As Object, Error As Boolean) As InternalPyTaskAsyncResult
-	Dim t1 As InternalPyTaskAsyncResult
-	t1.Initialize
-	t1.PyObject = PyObject
-	t1.Value = Value
-	t1.Error = Error
-	Return t1
+'Remotely prints the values or PyWrappers. Separated by space.
+Public Sub Print (Objects As List, StdErr As Boolean)
+	Dim Code As String = $"
+def _print(obj, StdErr):
+	print(*obj, file=sys.stderr if StdErr else sys.stdout)
+"$
+	RunCode("_print", Array(Objects, StdErr), Code)
 End Sub
 
-Private Sub DetectOS As String
-	Dim os As String = GetSystemProperty("os.name", "").ToLowerCase
-	If os.Contains("win") Then
-		Return "windows"
-	Else If os.Contains("mac") Then
-		Return "mac"
-	Else
-		Return "linux"
+Private Sub RegisterMember (KeyName As String, ClassCode As String, Overwrite As Boolean)
+	If Utils.RegisteredMembers.Contains(KeyName) = False Or Overwrite Then
+		Builtins.RunArgs("exec", Array(ClassCode, Utils.EvalGlobals, Null), Null)
+		Utils.RegisteredMembers.Add(KeyName)
 	End If
 End Sub
+
+'Runs a Python function or class. Note that the code is registered once and is then reused.
+'It is recommended to use the "RunCode" code snippet that creates a sub that calls RunCode.
+Public Sub RunCode (MemberName As String, Args As List, FunctionCode As String) As PyWrapper
+	RegisterMember(MemberName, FunctionCode, False)
+	Return GetMember(MemberName).RunArgs(CALL_METHOD, Args, Null)
+End Sub
+
+'Runs the provided Python code. It runs using the same global namespace as RunCode.
+Public Sub RunNoArgsCode (Code As String)
+	Builtins.RunArgs("exec", Array(Code, Utils.EvalGlobals, Null), Null)
+End Sub
+
+'Runs a single statement and returns the result (PyWrapper).
+'Example: <code>Py.Utils.RunStatement("10 * 15").Print</code>
+Public Sub RunStatement (Code As String) As PyWrapper
+	Return RunStatement2(Code, Null)
+End Sub
+'Runs a single statement and returns the result (PyWrapper). Allows passing a map with a set of "local" variables.
+'Example: <code>Py.Utils.RunStatement2($"locals()["x"] + 10"$, CreateMap("x": 20)).Print</code>
+Public Sub RunStatement2 (Code As String, Locals As Map) As PyWrapper
+	If NotInitialized(Locals) Then Locals = B4XCollections.GetEmptyMap
+	Return Builtins.RunArgs ("eval", Array(Code, Utils.EvalGlobals, Locals), Null)
+End Sub
+
+'Returns a member or attribute that was previously added to the global namespace.
+Public Sub GetMember(Member As String) As PyWrapper
+	Return Utils.EvalGlobals.Run("__getitem__").Arg(Member)
+End Sub
+
+'Imports a module.
+Public Sub ImportModule (Module As String) As PyWrapper
+	Return Utils.ImportLib.Run("import_module").Arg(Module)
+End Sub
+
+'Creates a slice object from Start (inclusive) to Stop (exclusive). Pass Null to omit a value.
+Public Sub Slice (StartValue As Object, StopValue As Object) As PyWrapper
+	Return Slice2(StartValue, StopValue, Null)
+End Sub
+
+'Same as Slice with an additional step value. Note that the value can be negative to traverse the collection backward.
+Public Sub Slice2 (StartValue As Object, StopValue As Object, StepValue As Object) As PyWrapper
+	Return Builtins.RunArgs("slice", Array(ConvertToIntIfMatch(StartValue), ConvertToIntIfMatch(StopValue), ConvertToIntIfMatch(StepValue)), Null)
+End Sub
+
+'Utility to prevent ints being treated as floats.
+Public Sub ConvertToIntIfMatch (o As Object) As Object
+	If o Is Float Or o Is Double Then
+		Dim d As Double = o
+		Dim i As Int = d
+		If Abs(d - i) < Epsilon Then Return i
+	End If
+	Return o
+End Sub
+
+'Fetches multiple objects and returns a list. Unserializable objects will be returned as a string.
+'Example: <code>Wait For (Py.Utils.FetchObjects(Array(x, y)) Complete (Fetched As List)</code>
+Public Sub FetchObjects (Objects As List) As ResumableSub
+	Dim list As PyWrapper = WrapObject(Objects)
+	Wait For (ConvertUnserializable(list).Fetch) Complete (Result As PyWrapper)
+	Return Result.Value.As(List)
+End Sub
+
+Private Sub ConvertUnserializable (List As Object) As PyWrapper
+	Dim Code As String = $"
+def ConvertUnserializable (bridge, list1):
+	print(type(bridge))
+	l = map(lambda x: bridge.comm.serializator.is_serializable(x), list1)
+	return [x if y is None else str(y)[:100] for x, y in zip(list1, l)]
+"$
+	Return RunCode("ConvertUnserializable", Array(Bridge, List), Code)
+End Sub
+
+Public Sub PyIIf (Condition As Object, TrueValue As Object, FalseValue As Object) As PyWrapper
+	Return RunStatement2($"locals()["TrueValue"] if locals()["Condition"] else locals()["FalseValue"]"$, _
+		CreateMap("TrueValue": TrueValue, "Condition": Condition, "FalseValue": FalseValue))
+End Sub
+
+'Sends the object to the Python process and returns a PyWrapper. The object must be serializeable with B4XSerializator.
+Public Sub WrapObject (Obj As Object) As PyWrapper
+	Dim Code As String = $"
+def WrapObject(obj):
+	return obj
+"$
+	Return RunCode("WrapObject", Array(Obj), Code)
+End Sub
+
+
+
