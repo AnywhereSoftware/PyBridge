@@ -19,32 +19,39 @@ Public Sub Initialize (Bridge As PyBridge, Key As PyObject)
 	mBridge = Bridge
 End Sub
 
-
-
 Public Sub Run(Method As String) As PyWrapper
 	Return RunArgs(Method, Null, Null)
 End Sub
 
+Public Sub Call As PyWrapper
+	Return Run("__call__")
+End Sub
+
 Public Sub Args(Parameters As List) As PyWrapper
 	LastArgs.Args.AddAll(Parameters)
+	Return AfterArg
+End Sub
+
+Private Sub AfterArg As PyWrapper
+	mBridge.Utils.Comm.MoveTaskToLast(LastArgs.Task)
 	Return Me
 End Sub
 
 Public Sub Arg(Parameter As Object) As PyWrapper
 	LastArgs.Args.Add(Parameter)
-	Return Me
+	Return AfterArg
 End Sub
 
 Public Sub ArgNamed (Name As String, Parameter As Object) As PyWrapper
 	LastArgs.KWArgs.Put(Name, Parameter)
-	Return Me
+	Return AfterArg
 End Sub
 
 Public Sub ArgsNamed (Parameters As Map) As PyWrapper
 	For Each k As String In Parameters.Keys
 		LastArgs.KWArgs.Put(k, Parameters.Get(k))
 	Next
-	Return Me
+	Return AfterArg
 End Sub
 
 'Runs a method with the given positional and named arguments. Both can be Null.
@@ -54,6 +61,7 @@ Public Sub RunArgs (Method As String, PositionalArgs As List, NamedArgs As Map) 
 	Dim w As PyWrapper
 	w.Initialize(mBridge, py)
 	w.LastArgs = a
+	a.Task = mBridge.Utils.Comm.BufferedTasks.Get(mBridge.Utils.Comm.BufferedTasks.Size - 1)
 	Return w
 End Sub
 
@@ -127,29 +135,34 @@ Public Sub Print2 (Prefix As String, Suffix As String, StdErr As Boolean)
 	If mFetched Then
 		Log(mValue)
 	Else
-		mBridge.Print(Array(Prefix, Me, Suffix), StdErr)
+		mBridge.PrintJoin(Array(Prefix, Me, Suffix), StdErr)
 	End If
 End Sub
 
 'Same as getting an item from a collection using square brackets.
 'Do not confuse with GetField which returns an attribute of this object.
-Public Sub GetItem (Key As Object) As PyWrapper
-	Return Run("__getitem__").Arg(mBridge.ConvertToIntIfMatch(Key))
+Public Sub Get (Key As Object) As PyWrapper
+	Return Run("__getitem__").Arg(mBridge.Utils.ConvertToIntIfMatch(Key))
+End Sub
+
+'Gets an item from a two dimensions array. Use Get(Array(...)) for N dimensions arrays.
+Public Sub Get2D (Key1 As Object, Key2 As Object) As PyWrapper
+	Return Get(Array(Key1, Key2))
 End Sub
 
 'Same as setting an item in a collection using square brackets.
-Public Sub SetItem(Key As Object, Value As Object)
-	Run("__setitem__").Arg(mBridge.ConvertToIntIfMatch(Key)).Arg(Value)
+Public Sub Set(Key As Object, Value As Object)
+	Run("__setitem__").Arg(mBridge.Utils.ConvertToIntIfMatch(Key)).Arg(Value)
 End Sub
 
 'Same as deleting an item using the del keyword.
 Public Sub DelItem(Key As Object, Value As Object) 
-	Run("__detitem__").Arg(mBridge.ConvertToIntIfMatch(Key)).Arg(Value)
+	Run("__detitem__").Arg(mBridge.Utils.ConvertToIntIfMatch(Key)).Arg(Value)
 End Sub
 
 'Tests whether the collection contains the item.
 Public Sub Contains(Item As Object) As PyWrapper
-	Return Run("__contains__").Arg(mBridge.ConvertToIntIfMatch(Item))
+	Return Run("__contains__").Arg(mBridge.Utils.ConvertToIntIfMatch(Item))
 End Sub
 
 'Returns a string representation of this object.

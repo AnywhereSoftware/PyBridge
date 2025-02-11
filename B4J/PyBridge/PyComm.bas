@@ -15,7 +15,7 @@ Sub Class_Globals
 	Private ser As B4XSerializator
 	Private WaitingTasks As Map
 	Private jME As JavaObject
-	Private FlatTasks As List
+	Public BufferedTasks As List
 End Sub
 
 Public Sub Initialize (Bridge As PyBridge, LocalPort As Int)
@@ -29,7 +29,7 @@ Public Sub Initialize (Bridge As PyBridge, LocalPort As Int)
 	mBridge = Bridge
 	mBridge.Utils.PyLog(mBridge.Utils.B4JPrefix, mBridge.Utils.mOptions.B4JColor, "Server is listening on port: " & Port)
 	srvr.Listen
-	FlatTasks.Initialize
+	BufferedTasks.Initialize
 	State = STATE_WAITING_FOR_CONNECTION
 End Sub
 
@@ -74,17 +74,28 @@ Private Sub AStream_NewData (Buffer() As Byte)
 End Sub
 
 Public Sub SendTask (Task As PyTask)
-	If FlatTasks.Size = 0 Then CallSubDelayed(Me, "Flush")
-	FlatTasks.AddAll(Array(Task.TaskId, Task.TaskType, Task.Extra))
+	If BufferedTasks.Size = 0 Then CallSubDelayed(Me, "Flush")
+	BufferedTasks.Add(Task)
+End Sub
+
+Public Sub MoveTaskToLast(Task As PyTask)
+	If BufferedTasks.Get(BufferedTasks.Size - 1) = Task Then
+		Return
+	End If
+	Dim i As Int = BufferedTasks.IndexOf(Task)
+	BufferedTasks.RemoveAt(i)
+	BufferedTasks.Add(Task)
 End Sub
 
 Public Sub Flush
-	If FlatTasks.Size > 0 Then
-		For i = 0 To FlatTasks.Size - 1 Step 3
-			Dim TaskType As Int = FlatTasks.Get(i + 1)
-			If TaskType = mBridge.Utils.TASK_TYPE_RUN Or TaskType = mBridge.Utils.TASK_TYPE_RUN_ASYNC Then
-				mBridge.Utils.UnwrapBeforeSerialization(FlatTasks.Get(i + 2))
+	If BufferedTasks.Size > 0 Then
+		Dim FlatTasks As List
+		FlatTasks.Initialize
+		For Each Task As PyTask In BufferedTasks
+			If Task.TaskType = mBridge.Utils.TASK_TYPE_RUN Or Task.TaskType = mBridge.Utils.TASK_TYPE_RUN_ASYNC Then
+				mBridge.Utils.UnwrapBeforeSerialization(Task.Extra)
 			End If
+			FlatTasks.AddAll(Array(Task.TaskId, Task.TaskType, Task.Extra))
 		Next
 		Dim res As Boolean = astream.Write(ser.ConvertObjectToBytes(FlatTasks))
 		If astream.OutputQueueSize > 100 Then
@@ -93,7 +104,7 @@ Public Sub Flush
 		If res = False And astream.OutputQueueSize > 0 Then
 			LogError("Queue is full!")
 		End If
-		FlatTasks.Clear
+		BufferedTasks.Clear
 	End If
 End Sub
 
@@ -109,7 +120,7 @@ End Sub
 
 Private Sub AStream_Terminated
 	ChangeState(STATE_DISCONNECTED)
-	FlatTasks.Clear
+	BufferedTasks.Clear
 	srvr.Close
 	If astream.IsInitialized Then astream.Close
 	mBridge.Utils.PyLog(mBridge.Utils.B4JPrefix, mBridge.Utils.mOptions.B4JColor, "disconnected")

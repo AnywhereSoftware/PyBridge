@@ -16,19 +16,35 @@ Sub Class_Globals
 	
 	Private mBridge As PyBridge
 	Public TaskIdCounter, PyObjectCounter As Int
-	Public CleanerClass As String
+	Public CleanerClass As JavaObject
 	Public CleanerIndex As Int
 	Public Comm As PyComm
 	Public mOptions As PyOptions
 	Public cleaner As JavaObject
 	Public RegisteredMembers As B4XSet
+	Public Epsilon As Double = 0.0000001
+	Private KeysThatNeedToBeRegistered As List
+	Private ObjectsThatNeedToBeRegistered As List
+	Private System As JavaObject
+	Private MemorySlots As Map
+	Private LastMemorySize As Int
+	Public MEMORY_INCREASE_THRESHOLD As Int = 500000
+	Public PackageName As String
+	Private BAClass As JavaObject
 End Sub
 
 'Internal method
 Public Sub Initialize (bridge As PyBridge, vComm As PyComm)
 	mBridge = bridge
-	CleanerClass = GetType(Me) & "$CleanRunnable"
+	CleanerClass = CleanerClass.InitializeStatic(GetType(Me) & "$CleanRunnable")
 	cleaner = cleaner.InitializeStatic("java.lang.ref.Cleaner").RunMethod("create", Null)
+	System.InitializeStatic("System")
+	BAClass.InitializeStatic("anywheresoftware.b4a.BA")
+	PackageName = GetType(Me)
+	PackageName = PackageName.SubString2(0, PackageName.Length - ".pyutils".Length)
+	KeysThatNeedToBeRegistered.Initialize
+	ObjectsThatNeedToBeRegistered.Initialize
+	MemorySlots.Initialize
 	If GetSystemProperty("b4j.ide", False) = True Then
 		PyErrPrefix = ""
 		PyOutPrefix = ""
@@ -38,10 +54,14 @@ End Sub
 
 Public Sub Connected (vImportLib As PyObject, options As PyOptions)
 	mOptions = options
+	PyObjectCounter = 100
 	ImportLib.Initialize(mBridge, vImportLib)
 	EvalGlobals = mBridge.Builtins.Run("dict")
-	PyObjectCounter = 100
 	RegisteredMembers.Initialize
+	KeysThatNeedToBeRegistered.Clear
+	ObjectsThatNeedToBeRegistered.Clear
+	MemorySlots.Clear
+	LastMemorySize = 0
 	CheckKeysNeedToBeCleaned
 End Sub
 
@@ -49,21 +69,28 @@ Public Sub Disconnected
 	CleanerIndex = CleanerIndex + 1
 End Sub
 
-
 'Use PyWrapper.Run instead.
 Public Sub Run (Target As PyObject, Method As String, Args As InternalPyMethodArgs) As PyObject
 	Dim res As PyObject = CreatePyObject(0)
-	Dim TASK As PyTask = CreatePyTask(0, TASK_TYPE_RUN, _
-		Array(Target.Key, Method, Args.Args, Args.KWArgs, res.Key))
+	Dim TASK As PyTask = CreatePyTask(0, TASK_TYPE_RUN, CreateExtra(Target, Method, Args, res))
+	mBridge.ErrorHandler.AddDataToTask(TASK)
 	Comm.SendTask(TASK)
 	Return res
 End Sub
 
+Private Sub CreateExtra(Target As PyObject, Method As String, Args As InternalPyMethodArgs, res As PyObject) As Object()
+	If mOptions.TrackLineNumbers Then
+		Return Array(Target.Key, Method, Args.Args, Args.KWArgs, res.Key, "", 0)
+	Else
+		Return Array(Target.Key, Method, Args.Args, Args.KWArgs, res.Key)
+	End If
+End Sub
 
 'Use PyWrapper.RunAsync instead.
 Public Sub RunAsync(Target As PyObject, Method As String, Args As InternalPyMethodArgs) As ResumableSub
 	Dim res As PyObject = CreatePyObject(0)
-	Dim TASK As PyTask = CreatePyTask(0, TASK_TYPE_RUN_ASYNC, Array(Target.Key, Method, Args.Args, Args.KWArgs, res.Key))
+	Dim TASK As PyTask = CreatePyTask(0, TASK_TYPE_RUN_ASYNC, CreateExtra(Target, Method, Args, res))
+	mBridge.ErrorHandler.AddDataToTask(TASK)
 	Comm.SendTaskAndWait(TASK)
 	Wait For (TASK) AsyncTask_Received (TASK As PyTask)
 	Return CheckForErrorsAndReturn(TASK, res)
@@ -150,12 +177,14 @@ End Sub
 Public Sub PyLog(Prefix As String, Clr As Int, O As Object)
 	#if not(DISABLE_PYBRIDGE_LOGS)
 	If o Is PyWrapper Then
-		mBridge.Print(o, Clr = mOptions.PyErrColor)
+		mBridge.PrintJoin(Array(o), Clr = mOptions.PyErrColor)
 	Else
 		Dim s As String = o
 		s = s.Trim.Replace(Chr(13), "")
 		If s.Length = 0 Then Return
-		If Clr <> 0 Then
+		If s.StartsWith("~de") Then
+			BAClass.RunMethod("Log", Array(s))		
+		Else If Clr <> 0 Then
 			LogColor(Prefix & s, Clr)
 		Else
 			Log(Prefix & s.Trim)
@@ -200,42 +229,88 @@ End Sub
 
 
 Private Sub RegisterForCleaning (Py As PyObject)
-	Dim Runnable As JavaObject
-	Runnable.InitializeNewInstance(CleanerClass, Array(Py.Key))
-	cleaner.RunMethod("register", Array(Py, Runnable))
+	ObjectsThatNeedToBeRegistered.Add(Py)
+	KeysThatNeedToBeRegistered.Add(Py.Key)
+	MemorySlots.Put(Py.Key, Null)
+	If MemorySlots.Size - LastMemorySize > MEMORY_INCREASE_THRESHOLD Then
+		ForceGC
+	End If
 End Sub
 
 Private Sub CheckKeysNeedToBeCleaned
-	Dim c As JavaObject
-	c.InitializeStatic(CleanerClass)
-	c.RunMethod("getKeys", Null) 'clear any previous keys
+	CleanerClass.RunMethod("getKeys", Null) 'clear any previous keys
 	CleanerIndex = CleanerIndex + 1
 	Dim MyIndex As Int = CleanerIndex
+	CleanerClass.SetField("currentCleanerIndex", MyIndex)
 	Do While MyIndex = CleanerIndex
-		Dim keys As List = c.RunMethod("getKeys", Null)
-		If keys.Size > 0 Then
-			Comm.SendTask(CreatePyTask(0, TASK_TYPE_CLEAN, keys))
-		End If
-		Sleep(1000)
+		KeysImpl
+		Sleep(200)
 	Loop
 End Sub
 
+Private Sub KeysImpl
+	Dim keys As List = CleanerClass.RunMethod("getKeys", Null)
+	If keys.Size > 0 Then
+		Log($"deleting ${keys.Size} keys"$)
+		Comm.SendTask(CreatePyTask(0, TASK_TYPE_CLEAN, keys))
+		For Each key As Int In keys
+			MemorySlots.Remove(key)
+		Next
+		Log("Memory size: " & MemorySlots.Size)
+		LastMemorySize = MemorySlots.Size
+	End If
+	RegisterKeys
+End Sub
+
+Public Sub ForceGC
+	LastMemorySize = MemorySlots.Size
+	PyLog(B4JPrefix, mOptions.B4JColor, "ForceGC: memory slots - " & LastMemorySize)
+	System.RunMethod("gc", Null)
+	KeysImpl
+End Sub
+
+Private Sub RegisterKeys
+	CleanerClass.RunMethod("registerMultipleKeys", Array(ObjectsThatNeedToBeRegistered, KeysThatNeedToBeRegistered, cleaner))
+	ObjectsThatNeedToBeRegistered.Clear
+	KeysThatNeedToBeRegistered.Clear
+End Sub
+
+'Utility to prevent ints being treated as floats.
+Public Sub ConvertToIntIfMatch (o As Object) As Object
+	If o Is Float Or o Is Double Then
+		Dim d As Double = o
+		Dim i As Int = d
+		If Abs(d - i) < Epsilon Then Return i
+	End If
+	Return o
+End Sub
 
 #if Java
 public static class CleanRunnable implements Runnable {
 	private final int key;
+	private final int cleanerIndex;
 	private final static java.util.List<Object> listOfKeys = java.util.Collections.synchronizedList(new java.util.ArrayList<Object>());
-	public CleanRunnable(int key) {
+	public static volatile int currentCleanerIndex;
+	public CleanRunnable(int key, int cleanerIndex) {
 		this.key = key;
+		this.cleanerIndex = cleanerIndex;
 	}
 	public void run() {
-		listOfKeys.add(key);
+		if (this.cleanerIndex == currentCleanerIndex)
+			listOfKeys.add(key);
 	}
 	public static java.util.List<Object> getKeys() {
 		synchronized(listOfKeys) {
 			java.util.ArrayList<Object> res = new java.util.ArrayList<Object>(listOfKeys);
 			listOfKeys.clear();
 			return res;
+		}
+	}
+	public static void registerMultipleKeys(java.util.List<Object> objects, java.util.List<Integer> keys, java.lang.ref.Cleaner cleaner) {
+		for (int i = 0;i < objects.size();i++) {
+			Object object = objects.get(i);
+			int key = keys.get(i);
+			cleaner.register(object, new CleanRunnable(key, currentCleanerIndex));
 		}
 	}
 }

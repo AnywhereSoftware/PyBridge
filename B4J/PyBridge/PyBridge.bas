@@ -13,28 +13,27 @@ Sub Class_Globals
 	Type InternalPyTaskAsyncResult (PyObject As PyObject, Value As Object, Error As Boolean)
 	Type PyOptions (PythonExecutable As String, LocalPort As Int, _
 		PyBridgePath As String, PyOutColor As Int, PyErrColor As Int, B4JColor As Int, _
-		ForceCopyBridgeSrc As Boolean, WatchDogSeconds As Int, PyCacheFolder As String, EnvironmentVars As Map)
-	Type InternalPyMethodArgs (Args As List, KWArgs As Map)
+		ForceCopyBridgeSrc As Boolean, WatchDogSeconds As Int, PyCacheFolder As String, EnvironmentVars As Map, _
+		TrackLineNumbers As Boolean)
+	Type InternalPyMethodArgs (Args As List, KWArgs As Map, Task As PyTask)
 	Private comm As PyComm
 	Private mCallback As Object
 	Private mEventName As String
-	
 	Public Utils As PyUtils
 	Public Builtins As PyWrapper
 	Public Bridge As PyWrapper
 	Public Sys As PyWrapper
-	
 	Private Shl As Shell
 	Private mOptions As PyOptions
-	Private Epsilon As Double = 0.0000001
 	Private ShlReadLoopIndex As Int
-	Public Const CALL_METHOD As String = "__call__"
+	Public ErrorHandler As PyErrorHandler
 End Sub
 
 Public Sub Initialize (Callback As Object, EventName As String)
 	mCallback = Callback
 	mEventName = EventName
 	mOptions.Initialize
+	ErrorHandler.Initialize(Utils)
 	Utils.Initialize(Me, comm)
 End Sub
 
@@ -63,6 +62,7 @@ Public Sub Start (Options As PyOptions)
 	End If
 End Sub
 
+
 Private Sub ShlReadLoop
 	ShlReadLoopIndex = ShlReadLoopIndex + 1
 	Dim MyIndex As Int = ShlReadLoopIndex
@@ -72,9 +72,9 @@ Private Sub ShlReadLoop
 	Loop
 End Sub
 
-Private Sub HandleOutAndErr (out As String, err As String)
+Private Sub HandleOutAndErr (out As String, Err As String)
 	If out.Length > 0 Then Utils.PyLog(Utils.PyOutPrefix, mOptions.PyOutColor, out)
-	If err.Length > 0 Then Utils.PyLog(Utils.PyErrPrefix, mOptions.PyErrColor, err)
+	If Err.Length > 0 Then Utils.PyLog(Utils.PyErrPrefix, mOptions.PyErrColor, Err)
 End Sub
 
 
@@ -101,6 +101,7 @@ Public Sub CreateOptions (PythonExecutable As String) As PyOptions
 	opt.WatchDogSeconds = 30
 	opt.PyCacheFolder = File.DirData("pybridge")
 	opt.EnvironmentVars =  CreateMap("PYTHONUTF8": 1)
+	opt.TrackLineNumbers = True
 	If Utils.DetectOS = "windows" Then opt.EnvironmentVars.Put("MPLCONFIGDIR", GetEnvironmentVariable("USERPROFILE", ""))
 	Return opt
 End Sub
@@ -161,8 +162,13 @@ Public Sub KillProcess
 	End Try
 End Sub
 
-'Remotely prints the values or PyWrappers. Separated by space.
-Public Sub Print (Objects As List, StdErr As Boolean)
+'Remotely prints the object.
+Public Sub Print(Obj As Object)
+	PrintJoin(Array(Obj), False)
+End Sub
+
+'Remotely prints the objects. Separated by space.
+Public Sub PrintJoin (Objects As List, StdErr As Boolean)
 	Dim Code As String = $"
 def _print(obj, StdErr):
 	print(*obj, file=sys.stderr if StdErr else sys.stdout)
@@ -181,7 +187,7 @@ End Sub
 'It is recommended to use the "RunCode" code snippet that creates a sub that calls RunCode.
 Public Sub RunCode (MemberName As String, Args As List, FunctionCode As String) As PyWrapper
 	RegisterMember(MemberName, FunctionCode, False)
-	Return GetMember(MemberName).RunArgs(CALL_METHOD, Args, Null)
+	Return GetMember(MemberName).Call.Args(Args)
 End Sub
 
 'Runs the provided Python code. It runs using the same global namespace as RunCode.
@@ -213,22 +219,27 @@ End Sub
 
 'Creates a slice object from Start (inclusive) to Stop (exclusive). Pass Null to omit a value.
 Public Sub Slice (StartValue As Object, StopValue As Object) As PyWrapper
-	Return Slice2(StartValue, StopValue, Null)
+	Return Builtins.RunArgs("slice", Array(Utils.ConvertToIntIfMatch(StartValue), Utils.ConvertToIntIfMatch(StopValue)), Null)
 End Sub
 
-'Same as Slice with an additional step value. Note that the value can be negative to traverse the collection backward.
-Public Sub Slice2 (StartValue As Object, StopValue As Object, StepValue As Object) As PyWrapper
-	Return Builtins.RunArgs("slice", Array(ConvertToIntIfMatch(StartValue), ConvertToIntIfMatch(StopValue), ConvertToIntIfMatch(StepValue)), Null)
+'Same as Slice(Null, Null). Equivalent to python [:].
+Public Sub SliceAll As PyWrapper
+	Return Slice(Null, Null)
 End Sub
 
-'Utility to prevent ints being treated as floats.
-Public Sub ConvertToIntIfMatch (o As Object) As Object
-	If o Is Float Or o Is Double Then
-		Dim d As Double = o
-		Dim i As Int = d
-		If Abs(d - i) < Epsilon Then Return i
-	End If
-	Return o
+'Casts the object to python int.
+Public Sub AsInt (o As Object) As PyWrapper
+	Return Builtins.Run("int").Arg(o)
+End Sub
+
+'Casts the object to python str (string).
+Public Sub AsStr (o As Object) As PyWrapper
+	Return Builtins.Run("str").Arg(o)
+End Sub
+
+'Casts the object to python float.
+Public Sub AsFloat (o As Object) As PyWrapper
+	Return Builtins.Run("float").Arg(o)
 End Sub
 
 'Fetches multiple objects and returns a list. Unserializable objects will be returned as a string.

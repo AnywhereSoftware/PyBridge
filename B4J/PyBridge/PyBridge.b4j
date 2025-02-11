@@ -13,13 +13,15 @@ Library5=jrandomaccessfile
 Library6=jshell
 Library7=jxui
 Library8=b4xcollections
-Module1=PyBridge
-Module2=PyComm
-Module3=PyUtils
-Module4=PyWrapper
+Module1=|absolute|C:\Users\H\Downloads\projects\NumPy\B4J\NumPy
+Module2=PyBridge
+Module3=PyComm
+Module4=PyErrorHandler
+Module5=PyUtils
+Module6=PyWrapper
 NumberOfFiles=2
 NumberOfLibraries=8
-NumberOfModules=4
+NumberOfModules=6
 Version=10
 @EndOfDesignText@
 #Region Project Attributes 
@@ -65,23 +67,45 @@ Private Sub Start
 	Dim opt As PyOptions = Py.CreateOptions(PythonPath)
 '	opt.LocalPort = 53271
 '	opt.PythonExecutable = ""
-'	opt.ForceCopyBridgeSrc = True
+	opt.ForceCopyBridgeSrc = True
 	opt.PyCacheFolder = "C:\Users\H\Downloads\projects"
 	Py.Start(opt)
 	Wait For Py_Connected (Success As Boolean)
 	
-	PrintPythonVersion
-	Dim sum As PyWrapper = ExampleOfPythonMethod(10, 20)
-	sum.Print
-	Py.WrapObject(10).OperAdd(20).Print2("Value is:", "", False)
-	Wait For (Py.Flush) Complete (u As Boolean)
+'	PrintPythonVersion
+'	Dim sum As PyWrapper = ExampleOfPythonMethod(10, 20)
+'	sum.Print
+'	Py.WrapObject(10).OperAdd(20).Print2("Value is:", "", False)
+'	Wait For (Py.Flush) Complete (u As Boolean)
 	'this also works:
-	sum = ExampleOfPythonMethod(sum, 15)
-	sum.PrintError
-	'And if we want to get the value:
-	Wait For (sum.Fetch) Complete (sum As PyWrapper)
-	Dim z As Int = sum.Value
-	Log("ttt: "  & z)
+	Dim np As NumPy
+	np.Initialize(Py)
+	
+	Dim n As Long = DateTime.Now
+'	For i = 1 To 100
+		Dim arr As PyWrapper = np.CreateArray(Array(Array(1, 2, 3), Array(4, 5, 6)))
+		
+		arr.Get2D(Py.SliceAll, Py.SliceAll)
+		arr.Get2D(Py.SliceAll, Py.SliceAll)
+'		arr.Get2D(Py.SliceAll, Py.SliceAll)
+'		arr.Get2D(Py.SliceAll, Py.SliceAll)
+'		arr.Get2D(Py.SliceAll, Py.SliceAll)
+'		arr.Get2D(Py.SliceAll, Py.SliceAll)
+'		arr.Get2D(Py.SliceAll, Py.SliceAll)
+'		arr.Get2D(Py.SliceAll, Py.SliceAll)
+'		arr.Get2D(Py.SliceAll, Py.SliceAll)
+'		arr.Get2D(Py.SliceAll, Py.SliceAll)
+'		arr.Get2D(Py.SliceAll, Py.SliceAll)
+'		Py.PrintJoin(Array(Test, "bbb"), False)
+		Py.Print("~de:main,234234")
+'	Next
+	Log(DateTime.Now - n)
+	
+End Sub
+
+
+Private Sub Test As PyWrapper
+	Return Py.WrapObject(100)
 End Sub
 
 Private Sub B4XPage_Background

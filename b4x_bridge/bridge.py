@@ -103,7 +103,7 @@ class B4XBridge:
         return tuple(_list)
 
     def run(self, task: Task, copy_args: bool) -> Tuple[bool, Optional[Exception]]:
-        target, method_name, args, kwargs, store_target = task.extra
+        target, method_name, args, kwargs, store_target, *line_information = task.extra
         target = self.memory[target]
         args = self.unwrap_list(args, copy_args)
         kwargs = self.unwrap_dict(kwargs, copy_args)
@@ -152,9 +152,11 @@ class B4XBridge:
             if key in self.memory:
                 del self.memory[key]
 
-    def wrap_exception(self, target, method, exception) -> Exception:
+    def wrap_exception(self, target, method, exception, line_information:Optional[list]) -> Exception:
         e = Exception(f"Python Error ({type(exception).__name__}) - Method: {type(target).__name__}.{method}: {exception}")
         print(e, file=sys.stderr)
+        if line_information is not None:
+            print("~de:" + line_information[0] + str(line_information[1]), file=sys.stderr)
         return e
 
     async def wait_for_incoming(self):
