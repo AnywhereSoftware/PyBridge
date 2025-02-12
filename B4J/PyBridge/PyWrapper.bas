@@ -255,6 +255,10 @@ Public Sub OprOr (Other As Object) As PyWrapper
 	Return Run("__or__").Arg(Other)
 End Sub
 
+Public Sub ToList As PyWrapper
+	Return mBridge.Builtins.Run("list").Arg(Me)
+End Sub
+
 
 #if java
 public void raiseError(String desc) {

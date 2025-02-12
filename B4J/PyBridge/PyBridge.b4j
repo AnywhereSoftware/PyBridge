@@ -13,15 +13,14 @@ Library5=jrandomaccessfile
 Library6=jshell
 Library7=jxui
 Library8=b4xcollections
-Module1=|absolute|C:\Users\H\Downloads\projects\NumPy\B4J\NumPy
-Module2=PyBridge
-Module3=PyComm
-Module4=PyErrorHandler
-Module5=PyUtils
-Module6=PyWrapper
+Module1=PyBridge
+Module2=PyComm
+Module3=PyErrorHandler
+Module4=PyUtils
+Module5=PyWrapper
 NumberOfFiles=2
 NumberOfLibraries=8
-NumberOfModules=6
+NumberOfModules=5
 Version=10
 @EndOfDesignText@
 #Region Project Attributes 
@@ -63,73 +62,41 @@ End Sub
 Private Sub Start
 '	Dim Linux As String = "/home/erel/python_env/bin/python"
 	Dim PythonPath As String = "D:\python\python\python.exe"
-	
+'	PythonPath = "/home/erel/python_env/bin/python"
 	Dim opt As PyOptions = Py.CreateOptions(PythonPath)
 '	opt.LocalPort = 53271
 '	opt.PythonExecutable = ""
 	opt.ForceCopyBridgeSrc = True
-	opt.PyCacheFolder = "C:\Users\H\Downloads\projects"
+'	opt.PyCacheFolder = "C:\Users\H\Downloads\projects"
+	opt.TrackLineNumbers = True
 	Py.Start(opt)
 	Wait For Py_Connected (Success As Boolean)
 	
-'	PrintPythonVersion
-'	Dim sum As PyWrapper = ExampleOfPythonMethod(10, 20)
-'	sum.Print
-'	Py.WrapObject(10).OperAdd(20).Print2("Value is:", "", False)
-'	Wait For (Py.Flush) Complete (u As Boolean)
-	'this also works:
-	Dim np As NumPy
-	np.Initialize(Py)
-	
+	Dim x As PyWrapper = Py.WrapObject(1)
 	Dim n As Long = DateTime.Now
-'	For i = 1 To 100
-		Dim arr As PyWrapper = np.CreateArray(Array(Array(1, 2, 3), Array(4, 5, 6)))
-		
-		arr.Get2D(Py.SliceAll, Py.SliceAll)
-		arr.Get2D(Py.SliceAll, Py.SliceAll)
-'		arr.Get2D(Py.SliceAll, Py.SliceAll)
-'		arr.Get2D(Py.SliceAll, Py.SliceAll)
-'		arr.Get2D(Py.SliceAll, Py.SliceAll)
-'		arr.Get2D(Py.SliceAll, Py.SliceAll)
-'		arr.Get2D(Py.SliceAll, Py.SliceAll)
-'		arr.Get2D(Py.SliceAll, Py.SliceAll)
-'		arr.Get2D(Py.SliceAll, Py.SliceAll)
-'		arr.Get2D(Py.SliceAll, Py.SliceAll)
-'		arr.Get2D(Py.SliceAll, Py.SliceAll)
-'		Py.PrintJoin(Array(Test, "bbb"), False)
-		Py.Print("~de:main,234234")
-'	Next
-	Log(DateTime.Now - n)
+	Do While True
+		Wait For (x.Fetch) Complete (x As PyWrapper)
+		Log("x: " & x.Value)
+		If x.Value.As(Int) > 1000 Then Exit
+		x = x.OperAdd(1)
+		x = x.OperAdd(1)
+		x = x.OperAdd(1)
+		x = x.OperAdd(1)
+		x = x.OperAdd(1)
+		x = x.OperAdd(1)
+		x = x.OperAdd(1)
+		x = x.OperAdd(1)
+		x = x.OperAdd(1)
+		x = x.OperAdd(1)
+		x = x.OperAdd(1)
+	Loop
 	
+	Log(DateTime.Now - n)
+
+	Wait For (x.Fetch) Complete (Value As PyWrapper)
+	c
 End Sub
 
-
-Private Sub Test As PyWrapper
-	Return Py.WrapObject(100)
-End Sub
-
-Private Sub B4XPage_Background
-	Py.KillProcess
-End Sub
-
-Private Sub PrintPythonVersion
-	Py.ImportModule("sys").GetField("version").Print2("Python version:", "", False)
-End Sub
-
-'Tip: start typing Py and use the Py macros to create such methods:
-Private Sub ExampleOfPythonMethod (X As Object, Y As Object) As PyWrapper
-	Dim Code As String = $"
-def ExampleOfPythonMethod (X, Y):
-    #python code here
-	return X + Y
-"$
-	Return Py.RunCode("ExampleOfPythonMethod", Array(X, Y), Code)
-End Sub
-
-
-Private Sub Py_Event (Name As String, Params As Map)
-	Dim key As Int = Params.Get("key1")
-	Dim o As PyObject
-	o.Key = key
+Private Sub SafeName(Name As String) As String
 End Sub
 

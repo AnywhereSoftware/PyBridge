@@ -113,12 +113,12 @@ class B4XBridge:
             self.memory[store_target] = res
             return True, None
         except Exception as e:
-            e = self.wrap_exception(target, method_name, e)
+            e = self.wrap_exception(target, method_name, e, line_information)
             self.memory[store_target] = e
             return False, e
 
     async def run_async(self, task: Task, error: Optional[Exception]):
-        target, method_name, args, kwargs, store_target = task.extra
+        target, method_name, args, kwargs, store_target, *line_information = task.extra
         self.unwrap_list(args, False)
         self.unwrap_dict(kwargs, False)
         if error is not None:
@@ -129,7 +129,7 @@ class B4XBridge:
                 method = getattr(target, task.extra[1])
                 res = await method(*args, **kwargs)
             except Exception as e:
-                res = self.wrap_exception(target, task.extra[1], e)
+                res = self.wrap_exception(target, task.extra[1], e, line_information)
         self.memory[store_target] = res
         self.comm.write_queue.put_nowait(Task.return_value_task(task.id, res, self.comm.serializator))
 
@@ -152,11 +152,14 @@ class B4XBridge:
             if key in self.memory:
                 del self.memory[key]
 
-    def wrap_exception(self, target, method, exception, line_information:Optional[list]) -> Exception:
-        e = Exception(f"Python Error ({type(exception).__name__}) - Method: {type(target).__name__}.{method}: {exception}")
+    def wrap_exception(self, target, method, exception, line_information:list) -> Exception:
+        msg = f"Python Error ({type(exception).__name__}) - Method: {type(target).__name__}.{method}: {exception}"
+        if line_information and len(line_information[0]) > 0:
+            msg = f"({line_information[0]}.{line_information[1]}) - {msg}"
+        e = Exception(msg)
+        if len(line_information) == 3 and line_information[2] > 0:
+            print("~de:" + line_information[0] + "," + str(line_information[2]), file=sys.stderr)
         print(e, file=sys.stderr)
-        if line_information is not None:
-            print("~de:" + line_information[0] + str(line_information[1]), file=sys.stderr)
         return e
 
     async def wait_for_incoming(self):
@@ -181,6 +184,8 @@ class B4XBridge:
             elif task.task_type == TaskType.CLEAN:
                 self.clean(task)
             elif task.task_type == TaskType.FLUSH:
+                if not state_good:
+                    task = Task(id=task.id, task_type=TaskType.ERROR, extra=[str(e)])
                 self.comm.write_queue.put_nowait(task)
 
 

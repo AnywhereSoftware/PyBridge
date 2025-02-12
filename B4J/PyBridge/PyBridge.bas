@@ -27,6 +27,7 @@ Sub Class_Globals
 	Private mOptions As PyOptions
 	Private ShlReadLoopIndex As Int
 	Public ErrorHandler As PyErrorHandler
+	Public PyLastException As String
 End Sub
 
 Public Sub Initialize (Callback As Object, EventName As String)
@@ -129,10 +130,11 @@ Private Sub AfterConnection
 End Sub
 
 'Flushes the output queue. Can be used with Wait For to wait for the Python process to complete executing the queue.
-'<code>Wait For (py.Flush) Complete (Unused As Boolean)</code>
+'If an exception was raised during execution then Success will be False and the error message will be avilable with py.PyLastException.
+'<code>Wait For (py.Flush) Complete (Success As Boolean)</code>
 Public Sub Flush As ResumableSub
-	Wait For (Utils.Flush) Complete (unused As Boolean)
-	Return unused
+	Wait For (Utils.Flush) Complete (Success As Boolean)
+	Return Success
 End Sub
 
 Private Sub Task_Received(TASK As PyTask)
@@ -176,9 +178,10 @@ def _print(obj, StdErr):
 	RunCode("_print", Array(Objects, StdErr), Code)
 End Sub
 
+
 Private Sub RegisterMember (KeyName As String, ClassCode As String, Overwrite As Boolean)
 	If Utils.RegisteredMembers.Contains(KeyName) = False Or Overwrite Then
-		Builtins.RunArgs("exec", Array(ClassCode, Utils.EvalGlobals, Null), Null)
+		RunNoArgsCode(ClassCode)
 		Utils.RegisteredMembers.Add(KeyName)
 	End If
 End Sub
@@ -209,12 +212,17 @@ End Sub
 
 'Returns a member or attribute that was previously added to the global namespace.
 Public Sub GetMember(Member As String) As PyWrapper
-	Return Utils.EvalGlobals.Run("__getitem__").Arg(Member)
+	Return Utils.EvalGlobals.Get(Member)
 End Sub
 
 'Imports a module.
 Public Sub ImportModule (Module As String) As PyWrapper
+	RunNoArgsCode("import " & Module)
 	Return Utils.ImportLib.Run("import_module").Arg(Module)
+End Sub
+
+Public Sub ImportModuleFrom(FromModule As String, ImportMember As String) As PyWrapper
+	Return ImportModule(FromModule).GetField(ImportMember)
 End Sub
 
 'Creates a slice object from Start (inclusive) to Stop (exclusive). Pass Null to omit a value.
@@ -242,18 +250,29 @@ Public Sub AsFloat (o As Object) As PyWrapper
 	Return Builtins.Run("float").Arg(o)
 End Sub
 
+Public Sub Map_(Function As Object, Iterable As Object) As PyWrapper
+	Return Builtins.Run("map").Arg(Utils.ConvertLambdaIfMatch(Function)).Arg(Iterable)
+End Sub
+
+Public Sub Filter (Function As Object, Iterable As Object) As PyWrapper
+	Return Builtins.Run("filter").Arg(Utils.ConvertLambdaIfMatch(Function)).Arg(Iterable)
+End Sub
+
+Public Sub Lambda(Code As String) As PyWrapper
+	Return RunStatement("lambda " & Code)
+End Sub
+
 'Fetches multiple objects and returns a list. Unserializable objects will be returned as a string.
 'Example: <code>Wait For (Py.Utils.FetchObjects(Array(x, y)) Complete (Fetched As List)</code>
-Public Sub FetchObjects (Objects As List) As ResumableSub
-	Dim list As PyWrapper = WrapObject(Objects)
-	Wait For (ConvertUnserializable(list).Fetch) Complete (Result As PyWrapper)
+Public Sub FetchObjects (Objects As Object) As ResumableSub
+	Dim List As PyWrapper = IIf(Objects Is PyWrapper, Objects, WrapObject(Objects))
+	Wait For (ConvertUnserializable(List).Fetch) Complete (Result As PyWrapper)
 	Return Result.Value.As(List)
 End Sub
 
 Private Sub ConvertUnserializable (List As Object) As PyWrapper
 	Dim Code As String = $"
 def ConvertUnserializable (bridge, list1):
-	print(type(bridge))
 	l = map(lambda x: bridge.comm.serializator.is_serializable(x), list1)
 	return [x if y is None else str(y)[:100] for x, y in zip(list1, l)]
 "$
@@ -261,8 +280,14 @@ def ConvertUnserializable (bridge, list1):
 End Sub
 
 Public Sub PyIIf (Condition As Object, TrueValue As Object, FalseValue As Object) As PyWrapper
-	Return RunStatement2($"locals()["TrueValue"] if locals()["Condition"] else locals()["FalseValue"]"$, _
-		CreateMap("TrueValue": TrueValue, "Condition": Condition, "FalseValue": FalseValue))
+	Return RunCode("PyIIF", Array(Condition, TrueValue, FalseValue), $"
+def PyIIF(condition, TrueValue, FalseValue):
+	res = TrueValue if condition else FalseValue
+	if callable(res):
+		return res()
+	else:
+		return res
+"$)
 End Sub
 
 'Sends the object to the Python process and returns a PyWrapper. The object must be serializeable with B4XSerializator.

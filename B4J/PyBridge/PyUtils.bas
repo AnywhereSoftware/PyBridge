@@ -30,7 +30,7 @@ Sub Class_Globals
 	Private LastMemorySize As Int
 	Public MEMORY_INCREASE_THRESHOLD As Int = 500000
 	Public PackageName As String
-	Private BAClass As JavaObject
+
 End Sub
 
 'Internal method
@@ -39,7 +39,6 @@ Public Sub Initialize (bridge As PyBridge, vComm As PyComm)
 	CleanerClass = CleanerClass.InitializeStatic(GetType(Me) & "$CleanRunnable")
 	cleaner = cleaner.InitializeStatic("java.lang.ref.Cleaner").RunMethod("create", Null)
 	System.InitializeStatic("System")
-	BAClass.InitializeStatic("anywheresoftware.b4a.BA")
 	PackageName = GetType(Me)
 	PackageName = PackageName.SubString2(0, PackageName.Length - ".pyutils".Length)
 	KeysThatNeedToBeRegistered.Initialize
@@ -80,7 +79,7 @@ End Sub
 
 Private Sub CreateExtra(Target As PyObject, Method As String, Args As InternalPyMethodArgs, res As PyObject) As Object()
 	If mOptions.TrackLineNumbers Then
-		Return Array(Target.Key, Method, Args.Args, Args.KWArgs, res.Key, "", 0)
+		Return Array(Target.Key, Method, Args.Args, Args.KWArgs, res.Key, "", "", 0)
 	Else
 		Return Array(Target.Key, Method, Args.Args, Args.KWArgs, res.Key)
 	End If
@@ -162,7 +161,12 @@ Public Sub Flush As ResumableSub
 	Dim task As PyTask = CreatePyTask(0, TASK_TYPE_FLUSH, Array())
 	Comm.SendTaskAndWait(task)
 	Wait For (task) AsyncTask_Received (task As PyTask)
-	Return True
+	If task.TaskType = TASK_TYPE_ERROR Then
+		mBridge.PyLastException = task.Extra.Get(0)
+		Return False
+	Else
+		Return True
+	End If
 End Sub
 
 'Use PyWrapper.Fetch instead.
@@ -180,15 +184,21 @@ Public Sub PyLog(Prefix As String, Clr As Int, O As Object)
 		mBridge.PrintJoin(Array(o), Clr = mOptions.PyErrColor)
 	Else
 		Dim s As String = o
-		s = s.Trim.Replace(Chr(13), "")
-		If s.Length = 0 Then Return
-		If s.StartsWith("~de") Then
-			BAClass.RunMethod("Log", Array(s))		
-		Else If Clr <> 0 Then
-			LogColor(Prefix & s, Clr)
-		Else
-			Log(Prefix & s.Trim)
+		If s.Length > 1000 Then
+			s = s.SubString2(0, 1000) & CRLF & "(message truncated)"
 		End If
+		s = s.Trim.Replace(Chr(13), "")
+		Dim lines() As String = Regex.Split("\n+", s)
+		For Each line As String In lines
+			line = line.Trim
+			If line.StartsWith("~de:") Then
+				mBridge.ErrorHandler.UntangleError(line)
+			Else If Clr <> 0 Then
+				LogColor(Prefix & line, Clr)
+			Else
+				Log(Prefix & line)
+			End If
+		Next
 	End If
 	#End If
 End Sub
@@ -251,12 +261,10 @@ End Sub
 Private Sub KeysImpl
 	Dim keys As List = CleanerClass.RunMethod("getKeys", Null)
 	If keys.Size > 0 Then
-		Log($"deleting ${keys.Size} keys"$)
 		Comm.SendTask(CreatePyTask(0, TASK_TYPE_CLEAN, keys))
 		For Each key As Int In keys
 			MemorySlots.Remove(key)
 		Next
-		Log("Memory size: " & MemorySlots.Size)
 		LastMemorySize = MemorySlots.Size
 	End If
 	RegisterKeys
@@ -283,6 +291,11 @@ Public Sub ConvertToIntIfMatch (o As Object) As Object
 		If Abs(d - i) < Epsilon Then Return i
 	End If
 	Return o
+End Sub
+
+Public Sub ConvertLambdaIfMatch (o As Object) As PyWrapper
+	If o Is PyWrapper Then Return o
+	Return mBridge.RunStatement(o)	
 End Sub
 
 #if Java
