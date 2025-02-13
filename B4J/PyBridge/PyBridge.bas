@@ -22,6 +22,7 @@ Sub Class_Globals
 	Public Utils As PyUtils
 	Public Builtins As PyWrapper
 	Public Bridge As PyWrapper
+	Public Itertools As PyWrapper
 	Public Sys As PyWrapper
 	Private Shl As Shell
 	Private mOptions As PyOptions
@@ -126,7 +127,7 @@ Private Sub AfterConnection
 	Builtins.Initialize(Me, Utils.CreatePyObject(3))
 	Utils.Connected(Utils.CreatePyObject(2), mOptions)
 	Sys = ImportModule("sys")
-	RunNoArgsCode("import sys")
+	Itertools = ImportModule("itertools")
 End Sub
 
 'Flushes the output queue. Can be used with Wait For to wait for the Python process to complete executing the queue.
@@ -262,12 +263,20 @@ Public Sub Lambda(Code As String) As PyWrapper
 	Return RunStatement("lambda " & Code)
 End Sub
 
+Public Sub PyNext(Iter As PyWrapper) As PyWrapper
+	Return Builtins.Run("next").Arg(Iter)
+End Sub
+
 'Fetches multiple objects and returns a list. Unserializable objects will be returned as a string.
 'Example: <code>Wait For (Py.Utils.FetchObjects(Array(x, y)) Complete (Fetched As List)</code>
 Public Sub FetchObjects (Objects As Object) As ResumableSub
 	Dim List As PyWrapper = IIf(Objects Is PyWrapper, Objects, WrapObject(Objects))
 	Wait For (ConvertUnserializable(List).Fetch) Complete (Result As PyWrapper)
 	Return Result.Value.As(List)
+End Sub
+
+Public Sub Range (FirstParam As Object) As PyWrapper
+	Return Builtins.Run("range").Arg(FirstParam)
 End Sub
 
 Private Sub ConvertUnserializable (List As Object) As PyWrapper
@@ -299,5 +308,18 @@ def WrapObject(obj):
 	Return RunCode("WrapObject", Array(Obj), Code)
 End Sub
 
+Public Sub Open (FilePath As Object, Mode As Object) As PyWrapper
+	Return Builtins.Run("open").Arg(FilePath).Arg(Mode)
+End Sub
 
+#if UI
+Public Sub ImageFromBytes(Bytes() As Byte) As B4XBitmap
+	Dim image As Image
+	Dim in As InputStream
+	in.InitializeFromBytesArray(Bytes, 0, Bytes.Length)
+	image.Initialize2(in)
+	in.Close
+	Return image
+End Sub
+#End If
 

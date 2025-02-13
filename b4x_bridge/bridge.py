@@ -157,9 +157,10 @@ class B4XBridge:
         if line_information and len(line_information[0]) > 0:
             msg = f"({line_information[0]}.{line_information[1]}) - {msg}"
         e = Exception(msg)
-        if len(line_information) == 3 and line_information[2] > 0:
-            print("~de:" + line_information[0] + "," + str(line_information[2]), file=sys.stderr)
-        print(e, file=sys.stderr)
+        if not isinstance(exception, StopIteration):
+            if len(line_information) == 3 and line_information[2] > 0:
+                print("~de:" + line_information[0] + "," + str(line_information[2]), file=sys.stderr)
+            print(e, file=sys.stderr)
         return e
 
     async def wait_for_incoming(self):

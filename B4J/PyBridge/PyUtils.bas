@@ -30,7 +30,7 @@ Sub Class_Globals
 	Private LastMemorySize As Int
 	Public MEMORY_INCREASE_THRESHOLD As Int = 500000
 	Public PackageName As String
-
+	Public IO As PyWrapper
 End Sub
 
 'Internal method
@@ -62,6 +62,13 @@ Public Sub Connected (vImportLib As PyObject, options As PyOptions)
 	MemorySlots.Clear
 	LastMemorySize = 0
 	CheckKeysNeedToBeCleaned
+	AddConverters
+End Sub
+
+Private Sub AddConverters
+	IO = mBridge.ImportModule("io")
+	Dim converters As PyWrapper = mBridge.Bridge.GetField("comm").GetField("serializator").GetField("converters")
+	converters.Set(IO.GetField("BytesIO"), mBridge.Lambda("x: x.getvalue()"))
 End Sub
 
 Public Sub Disconnected
@@ -231,9 +238,7 @@ End Sub
 
 
 Private Sub CheckForErrorsAndReturn (TASK As PyTask, PyObject As PyObject) As InternalPyTaskAsyncResult
-	If TASK.TaskType = TASK_TYPE_ERROR Then
-		PyLog(B4JPrefix, mOptions.PyErrColor, TASK.Extra.Get(0))
-	End If
+
 	Return CreateInternalPyTaskAsyncResult(PyObject, TASK.Extra.Get(0), TASK.TaskType == TASK_TYPE_ERROR)
 End Sub
 

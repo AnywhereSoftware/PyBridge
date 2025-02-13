@@ -117,6 +117,13 @@ Public Sub getValue As Object
 	Return mValue
 End Sub
 
+Public Sub getIsSuccess As Boolean
+	If mFetched = False Then
+		Me.As(JavaObject).RunMethod("raiseError", Array("Value not fetched"))
+	End If
+	Return Not(mError)
+End Sub
+
 Public Sub getIsFetched As Boolean
 	Return mFetched
 End Sub
@@ -257,6 +264,10 @@ End Sub
 
 Public Sub ToList As PyWrapper
 	Return mBridge.Builtins.Run("list").Arg(Me)
+End Sub
+
+Public Sub Iter As PyWrapper
+	Return Run("__iter__")
 End Sub
 
 
