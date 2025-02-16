@@ -6,7 +6,7 @@ Version=10
 @EndOfDesignText@
 #Event: Connected (Success As Boolean)
 #Event: Disconnected
-#Event: Event (Name As String, Params As Map)
+#Event: Event (Args As Map)
 Sub Class_Globals
 	Type PyObject (Key As Int)
 	Type PyTask (TaskId As Int, TaskType As Int, Extra As List)
@@ -31,6 +31,7 @@ Sub Class_Globals
 	Public PyLastException As String
 End Sub
 
+'Initializes the bridge.
 Public Sub Initialize (Callback As Object, EventName As String)
 	mCallback = Callback
 	mEventName = EventName
@@ -40,6 +41,7 @@ Public Sub Initialize (Callback As Object, EventName As String)
 End Sub
 
 'Starts the Python bridge server. Use Py.CreateOptions to create the Options object. 
+'Wait For the Connected event after this call.
 Public Sub Start (Options As PyOptions)
 	KillProcess
 	mOptions = Options
@@ -88,9 +90,13 @@ Private Sub shl_ProcessCompleted (Success As Boolean, ExitCode As Int, StdOut As
 	comm.CloseServer
 End Sub
 
-'Bridge options.
+'Bridge options. All fields are optional except of PythonExecutable.
 'PythonExecutable - Path to the python executable file.
-'PyBridgePath (optional) - Folder where the Python client program will be stored. File.DirData("pybridge") by default.
+'PyBridgePath - Folder where the Python client program will be stored. File.DirData("pybridge") by default.
+'PyCacheFolder - Folder where the cached compiled scripts will be stored. File.DirData("pybridge") by default.
+'EnvironmentVars - Environment variables of the Python process.
+'TrackLineNumbers - Whether B4X line information is tracked. Line information is added to error messages. 
+'This is True by default. Note that it adds an overhead to the method calls (not to the actual runtime of the Python process).
 'Other settings include the log colors and the internal watchdog timeout.
 Public Sub CreateOptions (PythonExecutable As String) As PyOptions
 	Dim opt As PyOptions
@@ -146,7 +152,7 @@ Private Sub Task_Received(TASK As PyTask)
 	Else
 		Dim EventName As String = TASK.Extra.Get(0)
 		Dim Params As Map = TASK.Extra.Get(1)
-		CallSubDelayed3(mCallback, mEventName & "_event", EventName, Params)
+		CallSubDelayed2(mCallback, mEventName & "_" & EventName, Params)
 	End If
 End Sub
 
@@ -199,11 +205,12 @@ Public Sub RunNoArgsCode (Code As String)
 	Builtins.RunArgs("exec", Array(Code, Utils.EvalGlobals, Null), Null)
 End Sub
 
-'Runs a single statement and returns the result (PyWrapper).
+'Runs a single statement and returns the result as a PyWrapper.
 'Example: <code>Py.Utils.RunStatement("10 * 15").Print</code>
 Public Sub RunStatement (Code As String) As PyWrapper
 	Return RunStatement2(Code, Null)
 End Sub
+
 'Runs a single statement and returns the result (PyWrapper). Allows passing a map with a set of "local" variables.
 'Example: <code>Py.Utils.RunStatement2($"locals()["x"] + 10"$, CreateMap("x": 20)).Print</code>
 Public Sub RunStatement2 (Code As String, Locals As Map) As PyWrapper
@@ -222,6 +229,7 @@ Public Sub ImportModule (Module As String) As PyWrapper
 	Return Utils.ImportLib.Run("import_module").Arg(Module)
 End Sub
 
+'Similar to calling import X from y.
 Public Sub ImportModuleFrom(FromModule As String, ImportMember As String) As PyWrapper
 	Return ImportModule(FromModule).GetField(ImportMember)
 End Sub
@@ -231,38 +239,64 @@ Public Sub Slice (StartValue As Object, StopValue As Object) As PyWrapper
 	Return Builtins.RunArgs("slice", Array(Utils.ConvertToIntIfMatch(StartValue), Utils.ConvertToIntIfMatch(StopValue)), Null)
 End Sub
 
-'Same as Slice(Null, Null). Equivalent to python [:].
+'Same as Slice(Null, Null). Equivalent to [:].
 Public Sub SliceAll As PyWrapper
 	Return Slice(Null, Null)
 End Sub
 
-'Casts the object to python int.
+'Casts the object to Python int.
 Public Sub AsInt (o As Object) As PyWrapper
 	Return Builtins.Run("int").Arg(o)
 End Sub
 
-'Casts the object to python str (string).
+'Casts the object to Python str (string).
 Public Sub AsStr (o As Object) As PyWrapper
 	Return Builtins.Run("str").Arg(o)
 End Sub
 
-'Casts the object to python float.
+'Casts the object to Python float.
 Public Sub AsFloat (o As Object) As PyWrapper
 	Return Builtins.Run("float").Arg(o)
 End Sub
 
+'Python Map method - executes the function on each item in the collection. Function will usually be created with Py.Lambda.
+'<code>Dim Numbers As PyWrapper = Py.WrapObject(Array(0, 1, 2, 3, 4, 5, 6, 7, 8, 9))
+'Numbers = Py.Map_(Py.Lambda("x: 2 * x"), Numbers).ToList
+'Numbers.Print
+'Numbers = Py.Filter(Py.Lambda("x: x < 10"), Numbers).ToList
+'Numbers.Print2("even numbers smaller than 10:", "", False)</code>
 Public Sub Map_(Function As Object, Iterable As Object) As PyWrapper
 	Return Builtins.Run("map").Arg(Utils.ConvertLambdaIfMatch(Function)).Arg(Iterable)
 End Sub
 
-Public Sub Filter (Function As Object, Iterable As Object) As PyWrapper
-	Return Builtins.Run("filter").Arg(Utils.ConvertLambdaIfMatch(Function)).Arg(Iterable)
+'Python filter method - filters the items based on the predicate. The predicate will usually be created with Py.Lambda.
+'<code>Dim Numbers As PyWrapper = Py.WrapObject(Array(0, 1, 2, 3, 4, 5, 6, 7, 8, 9))
+'Numbers = Py.Map_(Py.Lambda("x: 2 * x"), Numbers).ToList
+'Numbers.Print
+'Numbers = Py.Filter(Py.Lambda("x: x < 10"), Numbers).ToList
+'Numbers.Print2("even numbers smaller than 10:", "", False)</code>
+Public Sub Filter (Predicate As Object, Iterable As Object) As PyWrapper
+	Return Builtins.Run("filter").Arg(Utils.ConvertLambdaIfMatch(Predicate)).Arg(Iterable)
 End Sub
 
+'Creates a lambda function. This is equivalent to calling RunStatement("lambda " & Code).
+'<code>'<code>Dim Numbers As PyWrapper = Py.WrapObject(Array(0, 1, 2, 3, 4, 5, 6, 7, 8, 9))
+'Numbers = Py.Map_(Py.Lambda("x: 2 * x"), Numbers).ToList
+'Numbers.Print
+'Numbers = Py.Filter(Py.Lambda("x: x < 10"), Numbers).ToList
+'Numbers.Print2("even numbers smaller than 10:", "", False)</code></code>
 Public Sub Lambda(Code As String) As PyWrapper
 	Return RunStatement("lambda " & Code)
 End Sub
 
+'Process the next item of the iterator.
+'<code>Dim Numbers As PyWrapper = Py.Range(20)
+'Dim iter As PyWrapper = Numbers.Iter
+'Do While True
+'	Wait For (Py.PyNext(iter).Fetch) Complete (Result As PyWrapper)
+'	If Result.IsSuccess = False Then Exit
+'	Log(Result.Value)
+'Loop</code>
 Public Sub PyNext(Iter As PyWrapper) As PyWrapper
 	Return Builtins.Run("next").Arg(Iter)
 End Sub
@@ -275,6 +309,7 @@ Public Sub FetchObjects (Objects As Object) As ResumableSub
 	Return Result.Value.As(List)
 End Sub
 
+'Python range method.
 Public Sub Range (FirstParam As Object) As PyWrapper
 	Return Builtins.Run("range").Arg(FirstParam)
 End Sub
@@ -288,6 +323,7 @@ def ConvertUnserializable (bridge, list1):
 	Return RunCode("ConvertUnserializable", Array(Bridge, List), Code)
 End Sub
 
+'Similar to IIF. Note that both values will be evaluated.
 Public Sub PyIIf (Condition As Object, TrueValue As Object, FalseValue As Object) As PyWrapper
 	Return RunCode("PyIIF", Array(Condition, TrueValue, FalseValue), $"
 def PyIIF(condition, TrueValue, FalseValue):
@@ -308,18 +344,28 @@ def WrapObject(obj):
 	Return RunCode("WrapObject", Array(Obj), Code)
 End Sub
 
+'Python open method. Returns a file object. Call File.Run("close") to close it.
 Public Sub Open (FilePath As Object, Mode As Object) As PyWrapper
 	Return Builtins.Run("open").Arg(FilePath).Arg(Mode)
 End Sub
 
 #if UI
+'Utility to convert an array of bytes to image.
 Public Sub ImageFromBytes(Bytes() As Byte) As B4XBitmap
-	Dim image As Image
+	Dim Image As Image
 	Dim in As InputStream
 	in.InitializeFromBytesArray(Bytes, 0, Bytes.Length)
-	image.Initialize2(in)
+	Image.Initialize2(in)
 	in.Close
-	Return image
+	Return Image
+End Sub
+
+'Utility to convert an image to an array of bytes.
+Public Sub ImageToBytes (Image As B4XBitmap) As Byte()
+	Dim out As OutputStream
+	out.InitializeToBytesArray(0)
+	Image.WriteToStream(out, 100, "PNG")
+	Return out.ToBytesArray
 End Sub
 #End If
 

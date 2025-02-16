@@ -37,12 +37,13 @@ Sub Process_Globals
 	Private WebView1 As WebView
 	Type OcrPoint (X As Int, Y As Int)
 	Type OcrResult (Points As List, Text As String, Score As Double)
+	Type PyTest (Aaa As Long, Bbb As String)
 End Sub
 
 Sub AppStart (Form1 As Form, Args() As String)
 	MainForm = Form1
 	MainForm.RootPane.LoadLayout("Layout1")
-'	MainForm.Show
+	MainForm.Show
 	Py.Initialize(Me, "Py")
 	Start
 End Sub
@@ -66,19 +67,29 @@ Private Sub Start
 	Dim opt As PyOptions = Py.CreateOptions(PythonPath)
 '	opt.LocalPort = 53271
 '	opt.PythonExecutable = ""
-	opt.ForceCopyBridgeSrc = True
+'	opt.ForceCopyBridgeSrc = True
 '	opt.PyCacheFolder = "C:\Users\H\Downloads\projects"
-	opt.TrackLineNumbers = True
+	opt.TrackLineNumbers = False
 	Py.Start(opt)
 	Wait For Py_Connected (Success As Boolean)
-	Dim BytesIO As PyWrapper = Py.ImportModuleFrom("io", "BytesIO")
-	Dim rv As PyWrapper = BytesIO.Call
-	rv.Run("write").Arg("אראל".GetBytes("utf8"))
-	Wait For (rv.Fetch) Complete (rv As PyWrapper)
-	Dim b() As Byte = rv.Value
-	Log(BytesToString(b, 0, b.Length, "utf8"))
+	
+Dim Numbers As PyWrapper = Py.Range(20)
+Dim iter As PyWrapper = Numbers.Iter
+Do While True
+	Wait For (Py.PyNext(iter).Fetch) Complete (Result As PyWrapper)
+	If Result.IsSuccess = False Then Exit
+	Log(Result.Value)
+Loop
+	
 End Sub
 
-Private Sub SafeName(Name As String) As String
+Private Sub Py_Timer (Args As Map)
+	Log(Args.Get("a").As(PyTest).Bbb)
+	Dim p As PyTest
+	p.Initialize
+	p.Aaa = 23
+	p.Bbb = "afwqef"
+	Wait For (Py.WrapObject(p).Fetch) Complete (pp As PyWrapper)
+	Log(pp.Value)
+	
 End Sub
-

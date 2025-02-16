@@ -4,7 +4,7 @@ import importlib
 import sys
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import Tuple, List, Optional
+from typing import Tuple, List, Optional, Iterable
 from b4x_bridge.b4x_serializator import B4XSerializator
 
 
@@ -56,7 +56,7 @@ class B4XBridge:
         }
         from .comm_manager import CommManager
         self.comm = CommManager(self, port)
-        self.version = "0.12"
+        self.version = "0.50"
         self.max_time_until_pong = watchdog
 
     def register_dataclass(self, cls):
@@ -95,7 +95,16 @@ class B4XBridge:
                 _dict[k] = self.unwrap_tuple(v)
         return _dict
 
-
+    def to_array(self, iterable:Iterable, start:int, count: int):
+        self.memory[start] = None
+        for ix, obj in enumerate(iterable):
+            if ix >= count:
+                break
+            self.memory[start+ix] = obj
+        last_key = start + count - 1
+        if last_key not in self.memory:
+            raise IndexError()
+        return self.memory[last_key]
 
     def unwrap_tuple(self, _tuple: tuple) -> tuple:
         _list = list(_tuple)
@@ -203,17 +212,18 @@ def task_done_callback(task: asyncio.Task):
 def exception_handler(_, context):
     print(context, file=sys.stderr)
 
+bridge_instance = None
 async def main():
     port = int(sys.argv[1])
     watchdog = int(sys.argv[2])
-
-    bridge = B4XBridge(port, watchdog)
-    print(f"starting PyBridge v{bridge.version}")
+    global bridge_instance
+    bridge_instance = B4XBridge(port, watchdog)
+    print(f"starting PyBridge v{bridge_instance.version}")
     print(f"watchdog set to {watchdog} seconds" if watchdog else "watchdog disabled")
     loop = asyncio.get_event_loop()
     loop.set_exception_handler(exception_handler)
-    await bridge.start()
-    await bridge.wait_for_incoming()
+    await bridge_instance.start()
+    await bridge_instance.wait_for_incoming()
 
 
 

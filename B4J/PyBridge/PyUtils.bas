@@ -9,7 +9,7 @@ Sub Class_Globals
 	Public TASK_TYPE_RUN = 1, TASK_TYPE_GET = 2, TASK_TYPE_RUN_ASYNC = 3, TASK_TYPE_CLEAN = 4 _
 		, TASK_TYPE_ERROR = 5, TASK_TYPE_EVENT = 6, TASK_TYPE_PING = 7, TASK_TYPE_FLUSH = 8 As Int
 	
-	Public PythonBridgeCodeVersion As String = "0.12"
+	Public PythonBridgeCodeVersion As String = "0.50"
 	Public PyOutPrefix = "(pyout) ", PyErrPrefix = "(pyerr) ", B4JPrefix = "(b4j) " As String
 	Public EvalGlobals As PyWrapper
 	Public ImportLib As PyWrapper
@@ -69,6 +69,7 @@ Private Sub AddConverters
 	IO = mBridge.ImportModule("io")
 	Dim converters As PyWrapper = mBridge.Bridge.GetField("comm").GetField("serializator").GetField("converters")
 	converters.Set(IO.GetField("BytesIO"), mBridge.Lambda("x: x.getvalue()"))
+	mBridge.RunNoArgsCode("from b4x_bridge.bridge import bridge_instance")
 End Sub
 
 Public Sub Disconnected
@@ -201,6 +202,9 @@ Public Sub PyLog(Prefix As String, Clr As Int, O As Object)
 			If line.StartsWith("~de:") Then
 				mBridge.ErrorHandler.UntangleError(line)
 			Else If Clr <> 0 Then
+				If Comm.State = Comm.STATE_DISCONNECTED And line.StartsWith("Unhandled exception in task") Then
+					Return
+				End If
 				LogColor(Prefix & line, Clr)
 			Else
 				Log(Prefix & line)
